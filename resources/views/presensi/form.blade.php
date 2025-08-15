@@ -40,6 +40,23 @@
       @endif
     </form>
   </section>
+    @if($mode==='keluar')
+  {{-- Modal konfirmasi --}}
+  <div id="modalKeluar" class="fixed inset-0 bg-slate-900/40 hidden items-center justify-center z-50">
+    <div class="bg-white w-full max-w-md rounded-2xl p-6 shadow-xl">
+      <h4 class="text-lg font-semibold mb-2">Konfirmasi Presensi Keluar</h4>
+      <p class="text-sm text-slate-600">
+        Anda akan melakukan presensi keluar pada <b>{{ $now->format('H:i') }} WIB</b>.
+      </p>
+      <label class="block text-sm mt-4 text-slate-600">Catatan (opsional)</label>
+      <textarea id="catatanKeluar" class="w-full rounded-lg border-slate-300" rows="3" placeholder="Misal: pulang sesuai jadwal"></textarea>
+      <div class="mt-5 flex gap-2 justify-end">
+        <button type="button" id="btnBatal" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200">Batal</button>
+        <button type="button" id="btnYakin" class="px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">Yakin & Simpan</button>
+      </div>
+    </div>
+  </div>
+@endif
 
   <section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
     <h3 class="text-sm font-semibold mb-3">Lokasi Presensi</h3>
@@ -100,4 +117,65 @@
     btn.setAttribute('disabled', true);
   }
 </script>
+  <script>
+  @if($mode==='keluar')
+  const form = document.querySelector('form');
+  const modal = document.getElementById('modalKeluar');
+  const btn = document.getElementById('btnConfirm');
+  const btnYakin = document.getElementById('btnYakin');
+  const btnBatal = document.getElementById('btnBatal');
+  const catatan = document.getElementById('catatanKeluar');
+
+  // blok submit default -> tampilkan modal
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    if (btn.hasAttribute('disabled')) return;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  });
+
+  btnBatal?.addEventListener('click', ()=>{
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  });
+
+  btnYakin?.addEventListener('click', ()=>{
+    // kalau ingin kirim catatan, tambahkan input hidden
+    if (catatan && catatan.value.trim() !== '') {
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'catatan';
+      hidden.value = catatan.value.trim();
+      form.appendChild(hidden);
+    }
+    modal.classList.add('hidden'); modal.classList.remove('flex');
+    form.submit();
+  });
+  @endif
+</script>
+
+<p id="countdown" class="text-xs text-slate-500"></p>
+<script>
+  const cd = document.getElementById('countdown');
+  @if($mode==='masuk')
+    const end = "{{ $now->format('Y-m-d') }} {{ config('presensi.jam_masuk_end') }}:00";
+    const endAt = new Date(end.replace(' ', 'T'));
+    setInterval(()=>{
+      const diff = endAt - new Date();
+      if(diff <= 0){ cd.textContent = 'Waktu presensi masuk telah berakhir.'; return; }
+      const m = Math.floor(diff/60000)%60, s = Math.floor(diff/1000)%60;
+      cd.textContent = `Tutup dalam ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    },1000);
+  @else
+    const start = "{{ $now->format('Y-m-d') }} {{ config('presensi.jam_keluar_start') }}:00";
+    const startAt = new Date(start.replace(' ', 'T'));
+    setInterval(()=>{
+      const diff = startAt - new Date();
+      if(diff <= 0){ cd.textContent = 'Presensi keluar sudah dibuka.'; return; }
+      const h = Math.floor(diff/3600000), m = Math.floor(diff/60000)%60, s = Math.floor(diff/1000)%60;
+      cd.textContent = `Dibuka dalam ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    },1000);
+  @endif
+</script>
+
 @endsection

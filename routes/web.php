@@ -8,7 +8,10 @@ use App\Http\Controllers\IzinController;
 use App\Http\Controllers\Tu\TuDashboardController;
 use App\Http\Controllers\Tu\TuPresensiController;
 use App\Http\Controllers\Tu\TuExportController;
-
+use App\Http\Controllers\Piket\PiketDashboardController;
+use App\Http\Controllers\Piket\PiketCekController;
+use App\Http\Controllers\Piket\PiketRekapController;
+use App\Http\Controllers\Piket\PiketRiwayatController;
 /*
 |--------------------------------------------------------------------------
 | Halaman awal
@@ -20,9 +23,9 @@ Route::get('/', function () {
         return match (Auth::user()->role) {
             'admin' => redirect()->route('admin.dashboard'),
             'tu'    => redirect()->route('tu.dashboard'),
+            'piket' => redirect()->route('piket.dashboard'),   // <-- ubah ke dashboard piket
             'kepsek'=> redirect()->route('kepsek.dashboard'),
-            // guru & piket pakai UI presensi yang sama
-            'guru', 'piket' => redirect()->route('presensi.index'),
+            'guru'  => redirect()->route('presensi.index'),
             default => redirect()->route('login'),
         };
     }
@@ -36,12 +39,13 @@ Route::get('/', function () {
 | Jika kamu panggil ini dari AuthenticatedSessionController.
 */
 Route::get('/redirect-role', function () {
-    $user = Auth::user();
-    return match ($user->role ?? null) {
+    $r = Auth::user()->role ?? null;
+    return match ($r) {
         'admin' => redirect()->route('admin.dashboard'),
         'tu'    => redirect()->route('tu.dashboard'),
+        'piket' => redirect()->route('piket.dashboard'),       // <-- ubah ke dashboard piket
         'kepsek'=> redirect()->route('kepsek.dashboard'),
-        'guru', 'piket' => redirect()->route('presensi.index'),
+        'guru'  => redirect()->route('presensi.index'),
         default => redirect()->route('login'),
     };
 })->middleware('auth')->name('redirect.role');
@@ -122,6 +126,19 @@ Route::middleware(['auth', 'role:kepsek'])->group(function () {
     })->name('kepsek.dashboard');
 });
 
+Route::prefix('piket')->name('piket.')->middleware(['auth','role:piket'])->group(function () {
+    // Dashboard
+    Route::get('/dashboard', [PiketDashboardController::class,'index'])->name('dashboard');
+
+    // Ngecek Guru (status hari ini)
+    Route::get('/cek', [PiketCekController::class,'index'])->name('cek');
+
+    // Rekap harian (pilih tanggal)
+    Route::get('/rekap', [PiketRekapController::class,'index'])->name('rekap');
+
+    // Riwayat presensi (filter guru + rentang tanggal)
+    Route::get('/riwayat', [PiketRiwayatController::class,'index'])->name('riwayat');
+});
 /*
 |--------------------------------------------------------------------------
 | PROFILE (umum, hanya butuh auth)

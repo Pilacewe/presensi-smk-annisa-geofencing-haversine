@@ -18,7 +18,9 @@
         <div class="rounded-xl border border-slate-200 p-5">
           <p class="text-sm text-slate-500 mb-1">Presensi masuk</p>
           <div class="text-4xl font-extrabold tabular-nums" id="jamMasukDisplay">--:--:--</div>
-          <p class="mt-2 text-xs text-slate-500">Waktu server: {{ now()->timezone(config('app.timezone'))->format('H:i') }} WIB</p>
+          <p class="mt-2 text-xs text-slate-500">
+  Buka: {{ config('presensi.jam_masuk_start') }}–{{ config('presensi.jam_masuk_end') }} WIB
+</p>
 
           <form method="POST" action="{{ route('presensi.storeMasuk') }}" class="mt-5 flex items-center gap-3">
             @csrf
@@ -34,7 +36,9 @@
         <div class="rounded-xl border border-slate-200 p-5">
           <p class="text-sm text-slate-500 mb-1">Presensi keluar</p>
           <div class="text-4xl font-extrabold tabular-nums" id="jamKeluarDisplay">--:--:--</div>
-          <p class="mt-2 text-xs text-slate-500">Aktif saat jam pulang.</p>
+          <p class="mt-2 text-xs text-slate-500">
+  Mulai keluar: {{ config('presensi.jam_keluar_start') }} WIB
+</p>
 
           <form method="POST" action="{{ route('presensi.storeKeluar') }}" class="mt-5 flex items-center gap-3">
             @csrf

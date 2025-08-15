@@ -5,10 +5,15 @@ return [
     'lng'    => env('PRESENSI_LNG', 106.87307015952167),
     'radius' => env('PRESENSI_RADIUS_M', 150),
 
-    // Window waktu
-    'jam_masuk_start'   => env('PRESENSI_MASUK_START', '07:00'),
-    'jam_masuk_end'     => env('PRESENSI_MASUK_END',   '08:00'),
+    // === Aturan waktu ===
+    // Masuk hanya boleh antara jam ini
+    'jam_masuk_start' => '07:00',
+    'jam_masuk_end'   => '08:00',
 
-    'jam_keluar_start'  => env('PRESENSI_KELUAR_START','15:00'),
-    'jam_keluar_end'    => env('PRESENSI_KELUAR_END',  '15:40'),
+    // Mulai boleh keluar dari jam ini
+    'jam_keluar_start' => '16:00',
+
+    // kalau true: boleh pulang kapan saja SETELAH jam_keluar_start
+    // kalau false: hanya boleh tepat jam_keluar_start (biasanya tidak dipakai)
+    'keluar_fleksibel' => true,
 ];

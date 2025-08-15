@@ -47,7 +47,7 @@ class User extends Authenticatable
     ];
     public function presensis()
 {
-    return $this->hasMany(Presensi::class);
+    return $this->hasMany(\App\Models\Presensi::class);
 }
 
 }
