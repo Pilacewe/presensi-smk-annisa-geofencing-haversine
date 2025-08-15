@@ -4,11 +4,7 @@
 @section('title','Lihat Presensi Guru')
 @section('subtitle','Tampilan harian semua guru')
 
-@section('actions')
-  <a href="{{ route('tu.absen.create') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
-    Absensi Manual
-  </a>
-@endsection
+
 
 @section('content')
   {{-- Filter bar --}}

@@ -57,11 +57,11 @@
                 HTML;
               };
             @endphp
-
+            {!! $link(route('tu.absensi.index'), ['tu.absensi.*'], 'Presensi TU') !!}
             {!! $link(route('tu.dashboard'),        'tu.dashboard',        'Dashboard') !!}
             {!! $link(route('tu.presensi.index'),   'tu.presensi.index',   'Lihat Presensi') !!}
             {!! $link(route('tu.riwayat'),          'tu.riwayat',          'Riwayat') !!}
-            {!! $link(route('tu.absen.create'),     'tu.absen.create',     'Presensi Manual') !!}
+            
             {!! $link(route('tu.export.index'),    ['tu.export.index','tu.export.*'], 'Export') !!}
      
           </nav>
@@ -132,7 +132,7 @@
         {!! $m(route('tu.dashboard'),      'tu.dashboard',      'Dashboard') !!}
         {!! $m(route('tu.presensi.index'), 'tu.presensi.index', 'Lihat Presensi') !!}
         {!! $m(route('tu.riwayat'),        'tu.riwayat',        'Riwayat') !!}
-        {!! $m(route('tu.absen.create'),   'tu.absen.create',   'Presensi Manual') !!}
+        {!! $m(route('tu.absensi.index'), ['tu.absensi.*'], 'Presensi TU') !!}
         {!! $m(route('tu.export.index'),  ['tu.export.index','tu.export.*'], 'Export') !!}
         
 

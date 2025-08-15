@@ -7,6 +7,7 @@ use App\Http\Controllers\PresensiController;
 use App\Http\Controllers\IzinController;
 use App\Http\Controllers\Tu\TuDashboardController;
 use App\Http\Controllers\Tu\TuPresensiController;
+use App\Http\Controllers\Tu\TuSelfPresensiController;
 use App\Http\Controllers\Tu\TuExportController;
 use App\Http\Controllers\Piket\PiketDashboardController;
 use App\Http\Controllers\Piket\PiketCekController;
@@ -105,14 +106,22 @@ Route::prefix('tu')->name('tu.')->middleware(['auth','role:tu'])->group(function
     // Riwayat Presensi per guru / filter rentang
     Route::get('/riwayat', [TuPresensiController::class,'riwayat'])->name('riwayat');
 
-    // Absensi Manual (TU melakukan presensi “masuk/keluar” untuk guru)
-    Route::get('/absen', [TuPresensiController::class,'create'])->name('absen.create');
-    Route::post('/absen', [TuPresensiController::class,'store'])->name('absen.store');
-
     // Export
     Route::get('/export', [TuExportController::class,'index'])->name('export.index');
     Route::get('/export/excel', [TuExportController::class,'exportExcel'])->name('export.excel');
     Route::get('/export/pdf',   [TuExportController::class,'exportPdf'])->name('export.pdf');
+     // TU Self-Presensi (khusus TU absen dirinya)
+    Route::get('/absensi',               [\App\Http\Controllers\Tu\TuSelfPresensiController::class,'index'])->name('absensi.index');
+    Route::get('/absensi/masuk',         [\App\Http\Controllers\Tu\TuSelfPresensiController::class,'formMasuk'])->name('absensi.formMasuk');
+    Route::post('/absensi/masuk',        [\App\Http\Controllers\Tu\TuSelfPresensiController::class,'storeMasuk'])->name('absensi.storeMasuk');
+    Route::get('/absensi/keluar',        [\App\Http\Controllers\Tu\TuSelfPresensiController::class,'formKeluar'])->name('absensi.formKeluar');
+    Route::post('/absensi/keluar',       [\App\Http\Controllers\Tu\TuSelfPresensiController::class,'storeKeluar'])->name('absensi.storeKeluar');
+
+    // TU – Izin pribadi
+    Route::get('/absensi/izin',          [\App\Http\Controllers\Tu\TuSelfPresensiController::class,'izinIndex'])->name('absensi.izinIndex');
+    Route::get('/absensi/izin/create',   [\App\Http\Controllers\Tu\TuSelfPresensiController::class,'izinCreate'])->name('absensi.izinCreate');
+    Route::post('/absensi/izin',         [\App\Http\Controllers\Tu\TuSelfPresensiController::class,'izinStore'])->name('absensi.izinStore');
+    Route::get('/absensi/izin/{izin}',   [\App\Http\Controllers\Tu\TuSelfPresensiController::class,'izinShow'])->name('absensi.izinShow');
 });
 
 /*
@@ -132,6 +141,10 @@ Route::prefix('piket')->name('piket.')->middleware(['auth','role:piket'])->group
 
     // Ngecek Guru (status hari ini)
     Route::get('/cek', [PiketCekController::class,'index'])->name('cek');
+
+    // Absensi Manual (TU melakukan presensi “masuk/keluar” untuk guru)
+    Route::get('/absen', [PiketCekController::class,'create'])->name('absen.create');
+    Route::post('/absen', [PiketCekController::class,'store'])->name('absen.store');
 
     // Rekap harian (pilih tanggal)
     Route::get('/rekap', [PiketRekapController::class,'index'])->name('rekap');

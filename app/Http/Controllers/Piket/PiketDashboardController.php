@@ -12,19 +12,28 @@ class PiketDashboardController extends Controller
     {
         $today = now()->toDateString();
 
+        // Kartu statistik (hari ini)
         $totalGuru = User::where('role','guru')->count();
-        $hadir = Presensi::whereDate('tanggal',$today)->where('status','hadir')->count();
-        $izin  = Presensi::whereDate('tanggal',$today)->where('status','izin')->count();
-        $sakit = Presensi::whereDate('tanggal',$today)->where('status','sakit')->count();
+        $hadir = Presensi::whereDate('tanggal', $today)->where('status','hadir')->count();
+        $izin  = Presensi::whereDate('tanggal', $today)->where('status','izin')->count();
+        $sakit = Presensi::whereDate('tanggal', $today)->where('status','sakit')->count();
 
-        // log terbaru hari ini
+        // ====== LOG AKTIVITAS ======
+        // Opsi A: HANYA HARI INI
+        // $recent = Presensi::with('user:id,name')
+        //     ->whereDate('tanggal',$today)
+        //     ->orderByDesc('tanggal')
+        //     ->orderByDesc('jam_masuk')
+        //     ->take(20)
+        //     ->get();
+
+        // Opsi B: TERAKHIR (lintas hari) — DISARANKAN AGAR SELALU ADA DATA
         $recent = Presensi::with('user:id,name')
-            ->whereDate('tanggal',$today)
+            ->orderByDesc('tanggal')
             ->orderByDesc('jam_masuk')
-            ->orderByDesc('jam_keluar')
-            ->take(10)
+            ->take(20)
             ->get();
 
-        return view('piket.dashboard', compact('totalGuru','hadir','izin','sakit','recent'));
+        return view('piket.dashboard', compact('totalGuru','hadir','izin','sakit','recent','today'));
     }
 }

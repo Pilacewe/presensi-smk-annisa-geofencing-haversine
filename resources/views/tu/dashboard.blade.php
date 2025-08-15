@@ -71,10 +71,7 @@
          href="{{ route('tu.riwayat') }}">
         Riwayat Presensi
       </a>
-      <a class="block p-4 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700"
-         href="{{ route('tu.absen.create') }}">
-        Absensi Manual
-      </a>
+     
       <a class="block p-4 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
          href="{{ route('tu.export.index') }}">
         Export PDF/Excel

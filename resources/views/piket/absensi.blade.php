@@ -1,4 +1,4 @@
-@extends('layouts.tu')
+@extends('layouts.piket')
 @section('title','Absensi Guru (Manual)')
 
 @section('actions')
