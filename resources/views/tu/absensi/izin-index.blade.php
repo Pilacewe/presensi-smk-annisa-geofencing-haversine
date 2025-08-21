@@ -1,54 +1,61 @@
-@extends('layouts.tu')
-@section('title','Izin Saya')
-@section('subtitle','Pengajuan izin pribadi TU')
+{{-- Daftar izin pribadi TU --}}
+<section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
+  <div class="flex items-center justify-between gap-3 mb-4">
+    <h2 class="text-lg font-semibold">Izin Saya</h2>
+    <a href="{{ route('tu.absensi.izinCreate') }}"
+       class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm">
+      + Buat Izin
+    </a>
+  </div>
 
-@section('actions')
-  <a href="{{ route('tu.self.izin.create') }}" class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Ajukan Izin</a>
-@endsection
-
-@section('content')
-  @if (session('success'))
-    <div class="mb-4 rounded-lg bg-emerald-50 border-l-4 border-emerald-500 p-3 text-emerald-700 text-sm">
-      {{ session('success') }}
-    </div>
-  @endif
-  @if (session('message'))
-    <div class="mb-4 rounded-lg bg-amber-50 border-l-4 border-amber-500 p-3 text-amber-700 text-sm">
-      {{ session('message') }}
-    </div>
-  @endif
-
-  <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-x-auto">
-    <table class="min-w-[720px] w-full text-sm">
-      <thead>
-        <tr class="text-left text-slate-500 border-b">
-          <th class="px-4 py-3">Tanggal</th>
-          <th class="px-4 py-3">Alasan</th>
-          <th class="px-4 py-3">Status</th>
-          <th class="px-4 py-3">Aksi</th>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="text-left text-slate-500">
+        <tr class="border-b">
+          <th class="py-2 pr-4">Tanggal</th>
+          <th class="py-2 pr-4">Jenis</th>
+          <th class="py-2 pr-4">Keterangan</th>
+          <th class="py-2 pr-4">Status</th>
+          <th class="py-2 pr-4">Aksi</th>
         </tr>
       </thead>
-      <tbody>
-        @forelse($items as $iz)
-          <tr class="border-b last:border-0">
-            <td class="px-4 py-3">{{ \Carbon\Carbon::parse($iz->tanggal)->translatedFormat('d M Y') }}</td>
-            <td class="px-4 py-3">{{ $iz->alasan }}</td>
-            <td class="px-4 py-3 capitalize">{{ $iz->status }}</td>
-            <td class="px-4 py-3">
-              <a href="{{ route('tu.self.izin.show',$iz) }}" class="text-sky-700 hover:underline">Detail</a>
-              @if($iz->status==='pending')
-                <form method="POST" action="{{ route('tu.self.izin.destroy',$iz) }}" class="inline">@csrf @method('DELETE')
-                  <button class="text-rose-600 hover:underline" onclick="return confirm('Batalkan pengajuan?')">Batalkan</button>
-                </form>
-              @endif
+      <tbody class="divide-y">
+        @forelse ($items as $izin)
+          @php
+            $statusBadge = [
+              'pending'  => 'bg-amber-50  text-amber-700  ring-amber-200',
+              'disetujui'=> 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+              'ditolak'  => 'bg-rose-50   text-rose-700   ring-rose-200',
+            ][$izin->status] ?? 'bg-slate-50 text-slate-700 ring-slate-200';
+          @endphp
+          <tr>
+            <td class="py-2 pr-4 whitespace-nowrap">
+              {{ \Carbon\Carbon::parse($izin->tanggal)->translatedFormat('l, d F Y') }}
+            </td>
+            <td class="py-2 pr-4 capitalize">{{ $izin->jenis }}</td>
+            <td class="py-2 pr-4 max-w-[22rem]">
+              <span class="line-clamp-2">{{ $izin->keterangan ?: '—' }}</span>
+            </td>
+            <td class="py-2 pr-4">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs ring-1 {{ $statusBadge }}">
+                {{ ucfirst($izin->status) }}
+              </span>
+            </td>
+            <td class="py-2 pr-4">
+              <a href="{{ route('tu.absensi.izinShow', $izin) }}"
+                 class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs">Detail</a>
             </td>
           </tr>
         @empty
-          <tr><td colspan="4" class="px-4 py-6 text-center text-slate-500">Belum ada pengajuan.</td></tr>
+          <tr>
+            <td colspan="5" class="py-6 text-center text-slate-500">Belum ada pengajuan izin.</td>
+          </tr>
         @endforelse
       </tbody>
     </table>
   </div>
 
-  <div class="mt-4">{{ $items->links() }}</div>
-@endsection
+  @if (method_exists($items,'links'))
+    <div class="mt-4">{{ $items->withQueryString()->links() }}</div>
+  @endif
+</section>

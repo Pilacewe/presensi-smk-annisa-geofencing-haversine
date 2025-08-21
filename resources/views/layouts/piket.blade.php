@@ -61,7 +61,7 @@
             {!! $link(route('piket.absen.create'),     'piket.absen.create',     'Presensi Manual') !!}
            
             {!! $link(route('piket.riwayat'),     'piket.riwayat',     'Riwayat') !!}
-            {!! $link(route('presensi.index'),   ['presensi.index','presensi.*'], 'Presensi') !!}
+      
           </nav>
 
           {{-- User kanan: avatar -> dropdown (Profil / Logout) --}}
@@ -133,7 +133,6 @@
         {!! $m(route('piket.rekap'),     'piket.rekap',     'Rekap Harian') !!}
         {!! $m(route('piket.absen.create'),   'piket.absen.create',   'Presensi Manual') !!}
         {!! $m(route('piket.riwayat'),   'piket.riwayat',   'Riwayat') !!}
-        {!! $m(route('presensi.index'), ['presensi.index','presensi.*'], 'Presensi') !!}
 
         <div class="mt-3 px-4">
           <div class="flex items-center gap-3">

@@ -36,8 +36,8 @@ class TuDashboardController extends Controller
 
         // Window waktu dari config
         $now      = now()->format('H:i');
-        $mStart   = config('presensi.jam_masuk_start',  '06:30');
-        $mEnd     = config('presensi.jam_masuk_end',    '09:00');
+        $mStart   = config('presensi.jam_masuk_start',  '14:15');
+        $mEnd     = config('presensi.jam_masuk_end',    '14:20');
         $kStart   = config('presensi.jam_keluar_start', '15:30');
         $kEnd     = config('presensi.jam_keluar_end',   '18:00');
 
