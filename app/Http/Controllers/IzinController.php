@@ -28,36 +28,32 @@ class IzinController extends Controller
     }
 
     public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'jenis'       => ['required', Rule::in(['izin','sakit','dinas'])],
-            'tgl_mulai'   => ['required','date'],
-            'tgl_selesai' => ['required','date','after_or_equal:tgl_mulai'],
-            'keterangan'  => ['nullable','string','max:2000'],
-            'lampiran'    => ['nullable','file','mimes:jpg,jpeg,png,pdf','max:2048'],
-        ],[
-            'lampiran.mimes' => 'Lampiran harus jpg/jpeg/png/pdf',
-            'lampiran.max'   => 'Ukuran maksimal 2MB',
-        ]);
+{
+    $request->validate([
+        'jenis'       => 'required|in:izin,sakit',     // jika mau 'dinas', tambahkan di sini
+        'tgl_mulai'   => 'required|date',
+        'tgl_selesai' => 'required|date|after_or_equal:tgl_mulai',
+        'keterangan'  => 'nullable|string|max:500',
+        'bukti'       => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
+    ]);
 
-        // upload lampiran (opsional)
-        $path = null;
-        if ($request->hasFile('lampiran')) {
-            $path = $request->file('lampiran')->store('izin', 'public'); // storage/app/public/izin
-        }
-
-        $izin = Izin::create([
-            'user_id'      => Auth::id(),
-            'jenis'        => $validated['jenis'],
-            'tgl_mulai'    => $validated['tgl_mulai'],
-            'tgl_selesai'  => $validated['tgl_selesai'],
-            'keterangan'   => $validated['keterangan'] ?? null,
-            'lampiran_path'=> $path,
-            'status'       => 'pending',
-        ]);
-
-        return redirect()->route('izin.show',$izin)->with('success','Pengajuan izin dikirim & menunggu persetujuan.');
+    $path = null;
+    if ($request->hasFile('bukti')) {
+        $path = $request->file('bukti')->store('izin_bukti', 'public');
     }
+
+    Izin::create([
+        'user_id'     => auth()->id(),
+        'jenis'       => $request->jenis,
+        'tgl_mulai'   => $request->tgl_mulai,
+        'tgl_selesai' => $request->tgl_selesai,
+        'keterangan'  => $request->keterangan,
+        'status'      => 'pending',
+        'bukti'       => $path,
+    ]);
+
+    return redirect()->route('izin.index')->with('success','Pengajuan izin dikirim.');
+}
 
     public function show(Izin $izin)
     {
@@ -66,15 +62,22 @@ class IzinController extends Controller
     }
 
     public function destroy(Izin $izin)
-    {
-        $this->authorizeView($izin);
-        if ($izin->status !== 'pending') {
-            return back()->with('message','Pengajuan yang sudah diproses tidak dapat dibatalkan.');
-        }
-        if ($izin->lampiran_path) Storage::disk('public')->delete($izin->lampiran_path);
-        $izin->delete();
-        return redirect()->route('izin.index')->with('success','Pengajuan izin dibatalkan.');
+{
+    $this->authorizeView($izin);
+
+    if ($izin->status !== 'pending') {
+        return back()->with('message','Pengajuan yang sudah diproses tidak dapat dibatalkan.');
     }
+
+    if ($izin->bukti) {
+        \Illuminate\Support\Facades\Storage::disk('public')->delete($izin->bukti);
+    }
+
+    $izin->delete();
+
+    return redirect()->route('izin.index')->with('success','Pengajuan izin dibatalkan.');
+}
+
 
     private function authorizeView(Izin $izin)
     {

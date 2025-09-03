@@ -28,12 +28,14 @@ return new class extends Migration
         // lampiran bukti (opsional)
         $table->string('lampiran_path')->nullable();
 
+        $table->timestamps();
+
         // alur approval
         $table->enum('status', ['pending','approved','rejected'])->default('pending');
         $table->foreignId('approver_id')->nullable()->constrained('users')->nullOnDelete();
         $table->timestamp('approved_at')->nullable();
 
-        $table->timestamps();
+        
     });
 }
 

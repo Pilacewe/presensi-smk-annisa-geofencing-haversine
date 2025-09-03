@@ -6,39 +6,38 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
-{
-    Schema::create('presensis', function (Blueprint $table) {
-        $table->id();
-        $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+    {
+        Schema::create('presensis', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
 
-        // 1 record per user per hari
-        $table->date('tanggal')->index();
+            // 1 record per user per hari
+            $table->date('tanggal')->index();
 
-        // waktu
-        $table->time('jam_masuk')->nullable();
-        $table->time('jam_keluar')->nullable();
+            // waktu
+            $table->time('jam_masuk')->nullable();
+            $table->time('jam_keluar')->nullable();
 
-        // status umum: hadir/izin/sakit/alfa (default hadir saat masuk)
-        $table->enum('status', ['hadir', 'izin', 'sakit', 'alfa'])->default('hadir');
+            // status umum: tambah 'telat' agar selaras dengan query yg ada
+            $table->enum('status', ['hadir', 'telat', 'izin', 'sakit', 'alfa'])->default('hadir');
 
-        // lokasi terakhir saat aksi
-        $table->decimal('latitude', 10, 7)->nullable();
-        $table->decimal('longitude', 10, 7)->nullable();
+            // menit keterlambatan (opsional)
+            $table->integer('telat_menit')->nullable();
 
-        $table->timestamps();
+            // lokasi (pakai lat/lng agar konsisten dengan sebagian kode)
+            $table->decimal('lat', 10, 7)->nullable();
+            $table->decimal('lng', 10, 7)->nullable();
 
-        // pastikan tidak ada duplikat per user per tanggal
-        $table->unique(['user_id', 'tanggal']);
-    });
-}
+            $table->timestamps();
 
-public function down(): void
-{
-    Schema::dropIfExists('presensis');
-}
+            // pastikan tidak ada duplikat per user per tanggal
+            $table->unique(['user_id', 'tanggal']);
+        });
+    }
 
+    public function down(): void
+    {
+        Schema::dropIfExists('presensis');
+    }
 };

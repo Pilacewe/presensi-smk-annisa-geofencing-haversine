@@ -1,94 +1,115 @@
 @extends('layouts.admin')
 
-@section('title','Detail Izin')
-@section('subtitle','Tinjau & ubah status pengajuan')
+@section('title','Detail Izin / Sakit')
+
+@php
+  $fmt = fn($d) => \Carbon\Carbon::parse($d)->translatedFormat('l, d F Y');
+  $badge = function($st){
+    return [
+      'pending'  => 'bg-amber-50 text-amber-700 ring-amber-200',
+      'approved' => 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+      'rejected' => 'bg-rose-50 text-rose-700 ring-rose-200',
+    ][$st] ?? 'bg-slate-50 text-slate-700 ring-slate-200';
+  };
+  $thumb = $izin->bukti_path ?? $izin->bukti ?? null;
+@endphp
 
 @section('actions')
-  <a href="{{ route('admin.izin.index') }}" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm">Kembali</a>
+  <div class="flex items-center gap-2">
+    <a href="{{ route('admin.izin.index') }}" class="px-4 py-2 rounded-lg bg-white ring-1 ring-slate-200 text-sm">Kembali</a>
+    @if($izin->status==='pending')
+      <form method="POST" action="{{ route('admin.izin.approve',$izin->id) }}">
+        @csrf @method('PATCH')
+        <button class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700">Setujui</button>
+      </form>
+      <form method="POST" action="{{ route('admin.izin.reject',$izin->id) }}" onsubmit="return askReason(this)">
+        @csrf @method('PATCH')
+        <input type="hidden" name="reject_reason">
+        <button class="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm hover:bg-rose-700">Tolak</button>
+      </form>
+    @endif
+    @if(Route::has('admin.izin.destroy'))
+      <form method="POST" action="{{ route('admin.izin.destroy',$izin->id) }}"
+            onsubmit="return confirm('Hapus permohonan ini?')">
+        @csrf @method('DELETE')
+        <button class="px-4 py-2 rounded-lg bg-white ring-1 ring-rose-200 text-rose-700 text-sm hover:bg-rose-50">Hapus</button>
+      </form>
+    @endif
+  </div>
 @endsection
 
 @section('content')
-  @if (session('success'))
-    <div class="mb-4 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-3">
-      {{ session('success') }}
-    </div>
-  @endif
-
   <div class="grid lg:grid-cols-3 gap-6">
-    {{-- Info utama --}}
-    <section class="lg:col-span-2 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
-      <div class="flex items-start justify-between gap-4 mb-4">
+    <section class="lg:col-span-2 rounded-2xl bg-white ring-1 ring-slate-200 p-6 shadow-sm">
+      <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-lg font-semibold">Pengajuan Izin</h2>
-          <p class="text-xs text-slate-500">Diajukan: {{ $izin->created_at?->format('Y-m-d H:i') }}</p>
+          <h2 class="font-semibold text-slate-900">{{ $izin->user?->name ?? '—' }}</h2>
+          <p class="text-xs text-slate-500">Diajukan {{ $izin->created_at?->translatedFormat('d M Y · H:i') }}</p>
         </div>
-        @php
-          $badge = match($izin->status){
-            'approved' => 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-            'rejected' => 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
-            default    => 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
-          };
-        @endphp
-        <span class="px-3 py-1 rounded-full text-xs {{ $badge }}">{{ ucfirst($izin->status) }}</span>
+        <span class="text-[11px] px-2.5 py-1 rounded-full ring-1 {{ $badge($izin->status) }}">
+          {{ strtoupper($izin->status) }}
+        </span>
       </div>
 
-      <div class="grid sm:grid-cols-2 gap-4">
+      <div class="mt-5 grid sm:grid-cols-2 gap-4">
         <div class="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-4">
-          <p class="text-xs text-slate-500">Pegawai</p>
-          <p class="font-medium">{{ $izin->user?->name ?? '—' }}</p>
-          <p class="text-xs uppercase text-slate-400">{{ $izin->user?->role ?? '-' }}</p>
-        </div>
-        <div class="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-4">
-          <p class="text-xs text-slate-500">Tanggal Izin</p>
-          <p class="font-medium">{{ \Carbon\Carbon::parse($izin->tanggal)->translatedFormat('l, d F Y') }}</p>
-        </div>
-        <div class="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-4">
-          <p class="text-xs text-slate-500">Jenis</p>
+          <p class="text-[11px] text-slate-500">Jenis</p>
           <p class="font-medium capitalize">{{ $izin->jenis }}</p>
         </div>
         <div class="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-4">
-          <p class="text-xs text-slate-500">Diajukan pada</p>
-          <p class="font-medium">{{ $izin->created_at?->format('Y-m-d H:i') }}</p>
+          <p class="text-[11px] text-slate-500">Rentang</p>
+          <p class="font-medium">{{ $fmt($izin->tgl_mulai) }} — {{ $fmt($izin->tgl_selesai ?: $izin->tgl_mulai) }}</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-4 sm:col-span-2">
+          <p class="text-[11px] text-slate-500">Keterangan</p>
+          <p class="mt-1">{{ $izin->keterangan ?: '—' }}</p>
         </div>
       </div>
 
-      <div class="mt-4 rounded-xl bg-white">
-        <p class="text-xs text-slate-500 mb-1">Keterangan</p>
-        <div class="rounded-xl ring-1 ring-slate-200 p-4 min-h-[80px]">
-          {{ $izin->keterangan ?: '—' }}
+      @if($izin->status!=='pending')
+        <div class="mt-5 grid sm:grid-cols-2 gap-4">
+          <div class="rounded-xl bg-emerald-50 ring-1 ring-emerald-200 p-4">
+            <p class="text-[11px] text-emerald-700">Diproses</p>
+            <p class="font-medium text-emerald-700">
+              {{ $izin->approved_at ? \Carbon\Carbon::parse($izin->approved_at)->translatedFormat('d M Y · H:i') : '—' }}
+              @if($izin->approved_by) · oleh #{{ $izin->approved_by }} @endif
+            </p>
+          </div>
+          @if($izin->status==='rejected')
+            <div class="rounded-xl bg-rose-50 ring-1 ring-rose-200 p-4">
+              <p class="text-[11px] text-rose-700">Alasan penolakan</p>
+              <p class="font-medium text-rose-700">{{ $izin->reject_reason ?: '—' }}</p>
+            </div>
+          @endif
         </div>
-      </div>
+      @endif
     </section>
 
-    {{-- Panel tindakan --}}
-    <aside class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6 h-fit">
-      <h3 class="font-semibold mb-3">Tindakan</h3>
-
-      @if($izin->status === 'pending')
-        <form method="POST" action="{{ route('admin.izin.updateStatus',$izin) }}" class="space-y-3"
-              onsubmit="return confirm('Yakin memperbarui status?')">
-          @csrf @method('patch')
-
-          <label class="text-sm font-medium block">Catatan (opsional)</label>
-          <textarea name="catatan" rows="3" class="w-full rounded-lg border-slate-300" placeholder="Catatan admin..."></textarea>
-
-          <div class="flex items-center gap-2 pt-2">
-            <button name="status" value="approved"
-              class="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">Approve</button>
-            <button name="status" value="rejected"
-              class="px-4 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700">Reject</button>
-          </div>
-        </form>
-      @else
-        <p class="text-sm text-slate-600">Izin ini sudah <b>{{ strtoupper($izin->status) }}</b>.</p>
-        <p class="text-xs text-slate-500 mt-1">Jika perlu ubah lagi, hubungi admin senior atau lakukan lewat database sesuai SOP.</p>
-      @endif
-
-      <div class="mt-4">
-        <a href="{{ route('admin.izin.index') }}" class="inline-block px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm">
-          Kembali ke daftar
+    <aside class="rounded-2xl bg-white ring-1 ring-slate-200 p-6 shadow-sm">
+      <h3 class="font-semibold text-slate-900 mb-3">Bukti Lampiran</h3>
+      @if($thumb)
+        <a href="{{ \Illuminate\Support\Facades\Storage::url($thumb) }}" target="_blank" class="block">
+          <img src="{{ \Illuminate\Support\Facades\Storage::url($thumb) }}" class="rounded-xl ring-1 ring-slate-200 w-full object-cover" alt="Bukti">
         </a>
-      </div>
+        <a href="{{ \Illuminate\Support\Facades\Storage::url($thumb) }}" download
+           class="mt-3 inline-flex items-center gap-2 text-sm text-indigo-700 hover:underline">
+          Unduh bukti →
+        </a>
+      @else
+        <p class="text-sm text-slate-500">Tidak ada lampiran.</p>
+      @endif
+      <p class="mt-4 text-[11px] text-slate-500 leading-relaxed">
+        Pastikan bukti jelas. Jika kurang valid, gunakan tombol <b>Tolak</b> dan jelaskan alasannya.
+      </p>
     </aside>
   </div>
+
+  <script>
+    function askReason(form){
+      const val = prompt('Masukkan alasan penolakan (opsional):','');
+      if(val===null) return false;
+      form.querySelector('input[name="reject_reason"]').value = val || '';
+      return true;
+    }
+  </script>
 @endsection

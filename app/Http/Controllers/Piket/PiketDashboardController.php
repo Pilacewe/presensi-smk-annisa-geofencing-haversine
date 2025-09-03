@@ -3,62 +3,137 @@
 namespace App\Http\Controllers\Piket;
 
 use App\Http\Controllers\Controller;
+use App\Models\PiketRoster;
 use App\Models\Presensi;
+use App\Models\Izin;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PiketDashboardController extends Controller
 {
     public function index()
     {
-        // Gunakan timezone dari config
-        $tz = config('app.timezone', 'Asia/Jakarta');
-        $today = Carbon::now($tz)->toDateString();
+        $tz    = config('app.timezone','Asia/Jakarta');
+        $now   = Carbon::now($tz);
+        $today = $now->toDateString();
 
-        // Ambil semua guru
-        $guru = User::where('role', 'guru')
+        // ===== Roster hari ini =====
+        $rosterToday = PiketRoster::with('user:id,name')
+            ->whereDate('tanggal', $today)
+            ->first();
+
+        // ===== Siapa saja yang wajib absen? (Guru aktif) =====
+        $wajibQuery = User::where('role','guru')->where('is_active',1);
+        $wajibIds   = $wajibQuery->pluck('id');
+        $totalGuru  = $wajibIds->count();
+
+        // ===== Presensi hari ini untuk guru aktif =====
+        $presensiToday = Presensi::with('user:id,name')
+            ->whereDate('tanggal',$today)
+            ->whereIn('user_id',$wajibIds)
+            ->get();
+
+        $hadir = $presensiToday->where('status','hadir')->count();
+        $telat = $presensiToday->where('status','telat')->count();
+
+        // ===== Izin/Sakit hari ini (approved & overlap tanggal) =====
+        $izinToday = Izin::with('user:id,name')
+            ->where('status','approved')
+            ->whereIn('jenis',['izin','sakit'])
+            ->whereDate('tgl_mulai','<=',$today)
+            ->whereDate('tgl_selesai','>=',$today)
+            ->whereIn('user_id',$wajibIds)
+            ->get(['id','user_id','jenis','tgl_mulai','tgl_selesai']);
+
+        $izin  = $izinToday->where('jenis','izin')->count();
+        $sakit = $izinToday->where('jenis','sakit')->count();
+
+        // ===== Hitung "Belum Absen" (tidak hadir/telat & tidak izin/sakit) =====
+        $presentIds    = $presensiToday->whereIn('status',['hadir','telat'])->pluck('user_id')->unique();
+        $dispensasiIds = $izinToday->pluck('user_id')->unique();
+        $coveredIds    = $presentIds->merge($dispensasiIds)->unique();   // yang sudah "tercover"
+        $belumIds      = $wajibIds->diff($coveredIds);                   // sisanya = belum absen
+        $belum         = $belumIds->count();
+
+        // ===== Daftar untuk panel samping =====
+        $belumList = User::whereIn('id',$belumIds)
+            ->orderBy('name')
+            ->take(7)
+            ->get(['id','name']);
+
+        $hadirList = $presensiToday->where('status','hadir')
+            ->sortBy('jam_masuk')
+            ->take(7)
+            ->values();
+
+        $telatList = $presensiToday->where('status','telat')
+            ->sortByDesc('telat_menit')
+            ->take(7)
+            ->values();
+
+        // (opsional) list izin/sakit untuk panel
+        $izinList = $izinToday->sortBy('user.name')->take(7)->values();
+
+        // ===== Aktivitas terbaru (10) =====
+        $recent = Presensi::with('user:id,name')
+            ->whereDate('tanggal',$today)
+            ->orderByDesc(DB::raw('COALESCE(jam_keluar, jam_masuk, updated_at)'))
+            ->limit(10)
+            ->get(['id','user_id','tanggal','status','jam_masuk','jam_keluar','telat_menit','updated_at']);
+
+        // ===== Progress bar (hadir + telat) =====
+        $pct = $totalGuru > 0 ? round((($hadir + $telat) / $totalGuru) * 100) : 0;
+
+        // ===== Dropdown pegawai untuk set petugas (guru/tu/kepsek aktif) =====
+        $pegawai = User::whereIn('role',['guru','tu','kepsek'])
+            ->where('is_active',1)
             ->orderBy('name')
             ->get(['id','name']);
 
-        // Ambil presensi hari ini (di-key-kan berdasarkan user_id)
-        $map = Presensi::with('user')
-            ->whereDate('tanggal', $today)
-            ->get()
-            ->keyBy('user_id');
-
-        // Susun status tiap guru (hadir/izin/sakit/belum)
-        $rows = $guru->map(function ($g) use ($map) {
-            $p = $map->get($g->id);
-            return (object) [
-                'user'       => $g,
-                'status'     => $p ? ($p->status ?? 'hadir') : 'belum',
-                'jam_masuk'  => $p->jam_masuk ?? null,
-                'jam_keluar' => $p->jam_keluar ?? null,
-            ];
-        });
-
-        // Hitung ringkasan
-        $totalGuru = $guru->count();
-        $hadir     = $rows->where('status','hadir')->count();
-        $izin      = $rows->where('status','izin')->count();
-        $sakit     = $rows->where('status','sakit')->count();
-        $belum     = $rows->where('status','belum')->count();
-
-        // Ambil aktivitas terbaru (10 terakhir)
-        $recent = Presensi::with('user')
-            ->orderByDesc('updated_at')
-            ->limit(10)
-            ->get();
-
-        // Kirim data ke view
         return view('piket.dashboard', [
-            'totalGuru' => $totalGuru,
-            'hadir'     => $hadir,
-            'izin'      => $izin,
-            'sakit'     => $sakit,
-            'belum'     => $belum,
-            'recent'    => $recent,
-            'todayRows' => $rows,
+            'rosterToday' => $rosterToday,
+            'pegawai'     => $pegawai,
+
+            'totalGuru'   => $totalGuru,
+            'hadir'       => $hadir,
+            'telat'       => $telat,
+            'izin'        => $izin,
+            'sakit'       => $sakit,
+            'belum'       => $belum,
+            'pct'         => $pct,
+
+            'recent'      => $recent,
+            'hadirList'   => $hadirList,
+            'telatList'   => $telatList,
+            'belumList'   => $belumList,
+            'izinList'    => $izinList,
         ]);
+    }
+
+    /**
+     * Set petugas piket hari ini (sehari penuh, tanpa shift).
+     */
+    public function startShift(Request $r)
+    {
+        $tz    = config('app.timezone','Asia/Jakarta');
+        $today = Carbon::now($tz)->toDateString();
+
+        $data = $r->validate([
+            'user_id' => ['required','exists:users,id'],
+            'catatan' => ['nullable','string','max:200'],
+        ]);
+
+        PiketRoster::updateOrCreate(
+            ['tanggal' => $today],
+            [
+                'user_id'    => $data['user_id'],
+                'catatan'    => $data['catatan'] ?? null,
+                'assigned_by'=> auth()->id(),
+            ]
+        );
+
+        return back()->with('success','Petugas piket untuk hari ini disimpan.');
     }
 }

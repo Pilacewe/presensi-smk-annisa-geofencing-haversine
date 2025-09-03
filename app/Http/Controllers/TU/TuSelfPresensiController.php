@@ -8,19 +8,18 @@ use App\Models\Izin;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class TuSelfPresensiController extends Controller
 {
-    /* ===================== Helpers ===================== */
+    /* ===================== Helpers umum ===================== */
     private function nowWIB(): Carbon
     {
-        // pastikan APP_TIMEZONE=Asia/Jakarta di .env
         return Carbon::now(config('app.timezone', 'Asia/Jakarta'));
     }
 
     private function base(): array
     {
-        // titik & radius geofence ambil dari config/presensi.php
         return [
             'lat'    => (float) config('presensi.lat'),
             'lng'    => (float) config('presensi.lng'),
@@ -34,75 +33,196 @@ class TuSelfPresensiController extends Controller
         $R = 6371000;
         $dLat = deg2rad($lat2 - $lat1);
         $dLng = deg2rad($lng2 - $lng1);
-        $a = sin($dLat / 2) ** 2
-            + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
-        return 2 * $R * atan2(sqrt($a), sqrt(1 - $a));
+        $a = sin($dLat/2)**2 + cos(deg2rad($lat1))*cos(deg2rad($lat2))*sin($dLng/2)**2;
+        return 2 * $R * atan2(sqrt($a), sqrt(1-$a));
     }
 
-    /* ===================== Halaman utama Presensi TU (absen/riwayat/izin) ===================== */
+    /* ===================== Helpers waktu (aman) ===================== */
+    /** Ambil jam dari config, fallback ke default jika kosong/tidak valid. Format yang diterima: HH:MM */
+    private function timeOr(string $cfgKey, string $fallback): string
+    {
+        $val = (string) config($cfgKey, $fallback);
+        $val = trim($val);
+        return preg_match('/^\d{2}:\d{2}$/', $val) ? $val : $fallback;
+    }
+
+    /** Ubah "HH:MM" menjadi Carbon pada tanggal $base (detik=00) */
+    private function atToday(string $hhmm, Carbon $base): Carbon
+    {
+        [$h, $m] = array_map('intval', explode(':', $hhmm . ':'));
+        return $base->copy()->setTime($h, $m, 0);
+    }
+
+    /* ===================== Halaman utama Presensi TU ===================== */
     public function index(Request $request)
     {
-        $tab   = $request->input('tab', 'absen'); // absen|riwayat|izin
-        $user  = Auth::user();
-        $now   = $this->nowWIB();
-        $base  = $this->base();
+        $tab  = $request->input('tab', 'absen'); // absen|riwayat|izin
+        $user = Auth::user();
+        $now  = $this->nowWIB();
+        $base = $this->base();
 
-        // Window waktu dari config
-        $mulaiMasuk   = config('presensi.jam_masuk_start',  '07:00');
-        $akhirMasuk   = config('presensi.jam_masuk_end',    '08:00');
-        $mulaiKeluar  = config('presensi.jam_keluar_start', '16:00');
-        $akhirKeluar  = config('presensi.jam_keluar_end',   '17:00');
+        // Window dari config
+        $mulaiMasuk   = $this->timeOr('presensi.jam_masuk_start',  '07:00');
+        $akhirMasuk   = $this->timeOr('presensi.jam_masuk_end',    '08:00');
+        $mulaiKeluar  = $this->timeOr('presensi.jam_keluar_start', '16:00');
+        $akhirKeluar  = $this->timeOr('presensi.jam_keluar_end',   '17:00');
 
-        // Flag izin tombol (untuk UI)
-        $allowMasuk = $now->between(
-            $now->copy()->setTimeFromTimeString($mulaiMasuk),
-            $now->copy()->setTimeFromTimeString($akhirMasuk)
-        );
+        // Konversi ke Carbon pada tanggal hari ini
+        $inStart  = $this->atToday($mulaiMasuk,  $now);
+        $inEnd    = $this->atToday($akhirMasuk,  $now);
+        $outStart = $this->atToday($mulaiKeluar, $now);
+        $outEnd   = $this->atToday($akhirKeluar, $now);
 
-        $allowKeluar = $now->between(
-            $now->copy()->setTimeFromTimeString($mulaiKeluar),
-            $now->copy()->setTimeFromTimeString($akhirKeluar)
-        );
+        // Flag tombol (untuk UI)
+        $allowMasuk  = $now->between($inStart,  $inEnd);
+        $allowKeluar = $now->between($outStart, $outEnd);
 
-        // Record hari ini (disable tombol bila sudah absen)
+        // Record hari ini (untuk men-disable tombol jika sudah absen)
         $todayRec = Presensi::where('user_id', $user->id)
             ->where('tanggal', $now->toDateString())
             ->first();
 
-             // ➜ Tambahkan ini: total izin user (selalu ada untuk ringkasan)
-        $izinCount = Izin::where('user_id',$user->id)->count();
-        /* ------- data untuk tab RIWAYAT ------- */
-        $data = collect();
+        // Ringkasan jumlah izin saya (badge kecil)
+        $izinCount = Izin::where('user_id', $user->id)->count();
+
+        /* =========================================================
+         * TAB: RIWAYAT
+         * =======================================================*/
         if ($tab === 'riwayat') {
-            $tahun  = $request->input('tahun', $now->year);
-            $bulan  = $request->input('bulan', $now->month);
-            $status = $request->input('status'); // null|hadir|izin|sakit|alfa
+            $tz   = config('app.timezone','Asia/Jakarta');
+            $nowT = now($tz);
+            $tahun  = (int) $request->input('tahun', $nowT->year);
+            $bulan  = (int) $request->input('bulan', $nowT->month);
+            $status = $request->input('status'); // null|hadir|telat|izin|sakit
 
-            $q = Presensi::where('user_id', $user->id)
-                ->whereYear('tanggal', $tahun)
-                ->whereMonth('tanggal', $bulan)
-                ->orderByDesc('tanggal');
+            $from = Carbon::create($tahun,$bulan,1,0,0,0,$tz)->startOfDay();
+            $to   = $from->copy()->endOfMonth()->endOfDay();
+            $uid  = $user->id;
 
-            if ($status) $q->where('status', $status);
+            // 1) Presensi harian (kecualikan izin/sakit)
+            $harian = Presensi::where('user_id',$uid)
+                ->whereBetween('tanggal', [$from->toDateString(), $to->toDateString()])
+                ->whereNotIn('status',['izin','sakit'])
+                ->when(in_array($status,['hadir','telat']), fn($q)=>$q->where('status',$status))
+                ->orderByDesc('tanggal')->orderByDesc('jam_masuk')
+                ->get()
+                ->map(function($p){
+                    return (object)[
+                        'type'         => 'presensi',
+                        'date_start'   => $p->tanggal,
+                        'date_end'     => $p->tanggal,
+                        'date_label'   => Carbon::parse($p->tanggal)->translatedFormat('l, d F Y'),
+                        'jam_masuk'    => $p->jam_masuk,
+                        'jam_keluar'   => $p->jam_keluar,
+                        'status_key'   => $p->status ?: 'hadir',
+                        'status_label' => strtoupper($p->status ?: 'hadir'),
+                        'telat_menit'  => $p->telat_menit,
+                        'keterangan'   => null,
+                        'approval'     => null,
+                    ];
+                });
 
-            $data = $q->paginate(12)->withQueryString();
+            // 2) Izin/Sakit sebagai rentang (clip ke bulan)
+            $rentang = Izin::where('user_id',$uid)
+                ->where(function($q) use($from,$to){
+                    $q->whereBetween('tgl_mulai',   [$from->toDateString(), $to->toDateString()])
+                      ->orWhereBetween('tgl_selesai',[$from->toDateString(), $to->toDateString()])
+                      ->orWhere(function($qq) use($from,$to){
+                          $qq->where('tgl_mulai','<=',$from->toDateString())
+                             ->where('tgl_selesai','>=',$to->toDateString());
+                      });
+                })
+                ->when(in_array($status,['izin','sakit']), fn($q)=>$q->where('jenis',$status))
+                ->orderByDesc('tgl_mulai')
+                ->get()
+                ->map(function($i) use($from,$to){
+                    $s = Carbon::parse($i->tgl_mulai)->max($from);
+                    $e = Carbon::parse($i->tgl_selesai ?: $i->tgl_mulai)->min($to);
+
+                    return (object)[
+                        'type'         => 'izin',
+                        'date_start'   => $s->toDateString(),
+                        'date_end'     => $e->toDateString(),
+                        'date_label'   => $s->equalTo($e)
+                            ? $s->translatedFormat('l, d F Y')
+                            : $s->translatedFormat('d M Y').' – '.$e->translatedFormat('d M Y'),
+                        'jam_masuk'    => null,
+                        'jam_keluar'   => null,
+                        'status_key'   => strtolower($i->jenis ?? 'izin'),   // izin|sakit
+                        'status_label' => strtoupper($i->jenis ?? 'izin'),
+                        'telat_menit'  => null,
+                        'keterangan'   => $i->keterangan,
+                        'approval'     => $i->status, // approved|pending|rejected
+                    ];
+                });
+
+            // 3) Gabung + sort + paginate (Collection)
+            $timeline = $harian->concat($rentang)
+                ->sortByDesc(fn($x)=>[$x->date_start, $x->type])
+                ->values();
+
+            $perPage = 20;
+            $page    = LengthAwarePaginator::resolveCurrentPage() ?: 1;
+            $items   = $timeline->slice(($page - 1) * $perPage, $perPage)->values();
+            $data    = new LengthAwarePaginator($items, $timeline->count(), $perPage, $page);
+            $data->withPath(url()->current())->appends($request->query());
+
+            // dropdowns
+            $years    = range($nowT->year, $nowT->year - 4);
+            $bulanMap = [1=>'Jan',2=>'Feb',3=>'Mar',4=>'Apr',5=>'Mei',6=>'Jun',7=>'Jul',8=>'Agu',9=>'Sep',10=>'Okt',11=>'Nov',12=>'Des'];
+
+            return view('tu.absensi.riwayat', [
+                'data'     => $data,
+                'years'    => $years,
+                'bulanMap' => $bulanMap,
+                'tahun'    => $tahun,
+                'bulan'    => $bulan,
+                'status'   => $status,
+            ]);
         }
 
-        /* ------- data untuk tab IZIN ------- */
-        $izinItems = collect();
+        /* =========================================================
+         * TAB: IZIN (pribadi)
+         * =======================================================*/
         if ($tab === 'izin') {
             $izinItems = Izin::where('user_id', $user->id)
                 ->orderByDesc('created_at')
                 ->paginate(10)
                 ->withQueryString();
+
+            return view('tu.absensi.index', [
+                'tab'          => 'izin',
+                'now'          => $now,
+                'base'         => $base,
+                'mulaiMasuk'   => $mulaiMasuk,
+                'akhirMasuk'   => $akhirMasuk,
+                'mulaiKeluar'  => $mulaiKeluar,
+                'akhirKeluar'  => $akhirKeluar,
+                'allowMasuk'   => $allowMasuk,
+                'allowKeluar'  => $allowKeluar,
+                'todayRec'     => $todayRec,
+                'izinItems'    => $izinItems,
+                'izinCount'    => $izinCount,
+                // 'data' tidak dipakai pada tab izin
+            ]);
         }
 
-        return view('tu.absensi.index', compact(
-            'tab', 'now', 'base',
-            'mulaiMasuk', 'akhirMasuk', 'mulaiKeluar', 'akhirKeluar',
-            'allowMasuk', 'allowKeluar',
-            'todayRec', 'data', 'izinItems', 'izinCount'
-        ));
+        /* =========================================================
+         * TAB: ABSEN (default)
+         * =======================================================*/
+        return view('tu.absensi.index', [
+            'tab'          => 'absen',
+            'now'          => $now,
+            'base'         => $base,
+            'mulaiMasuk'   => $mulaiMasuk,
+            'akhirMasuk'   => $akhirMasuk,
+            'mulaiKeluar'  => $mulaiKeluar,
+            'akhirKeluar'  => $akhirKeluar,
+            'allowMasuk'   => $allowMasuk,
+            'allowKeluar'  => $allowKeluar,
+            'todayRec'     => $todayRec,
+            'izinCount'    => $izinCount,
+        ]);
     }
 
     /* ===================== Form & Store MASUK ===================== */
@@ -110,12 +230,12 @@ class TuSelfPresensiController extends Controller
     {
         $now        = $this->nowWIB();
         $base       = $this->base();
-        $mulaiMasuk = config('presensi.jam_masuk_start', '07:00');
-        $akhirMasuk = config('presensi.jam_masuk_end',   '08:00');
+        $mulaiMasuk = $this->timeOr('presensi.jam_masuk_start', '07:00');
+        $akhirMasuk = $this->timeOr('presensi.jam_masuk_end',   '08:00');
 
         $allowMasuk = $now->between(
-            $now->copy()->setTimeFromTimeString($mulaiMasuk),
-            $now->copy()->setTimeFromTimeString($akhirMasuk)
+            $this->atToday($mulaiMasuk, $now),
+            $this->atToday($akhirMasuk, $now)
         );
 
         return view('tu.absensi.form', [
@@ -136,17 +256,7 @@ class TuSelfPresensiController extends Controller
             'longitude' => 'required|numeric',
         ]);
 
-        $now        = $this->nowWIB();
-        $mulaiMasuk = config('presensi.jam_masuk_start', '07:00');
-        $akhirMasuk = config('presensi.jam_masuk_end',   '08:00');
-
-        // validasi waktu
-        if (! $now->between(
-            $now->copy()->setTimeFromTimeString($mulaiMasuk),
-            $now->copy()->setTimeFromTimeString($akhirMasuk)
-        )) {
-            return back()->with('message', "Presensi masuk hanya {$mulaiMasuk}-{$akhirMasuk}")->withInput();
-        }
+        $now = $this->nowWIB();
 
         // geofence
         $jarak = $this->jarak(
@@ -157,7 +267,6 @@ class TuSelfPresensiController extends Controller
             return back()->with('message', 'Di luar area presensi (± ' . number_format($jarak, 0) . ' m).');
         }
 
-        // simpan
         $user  = Auth::user();
         $today = $now->toDateString();
 
@@ -170,14 +279,27 @@ class TuSelfPresensiController extends Controller
             return back()->with('message', 'Presensi MASUK sudah tercatat.');
         }
 
+        // hitung telat dari jam target
+        $targetStr   = $this->timeOr('presensi.jam_target_masuk','07:00');
+        $targetMasuk = $now->copy()->setTimeFromTimeString($targetStr);
+        $telatMenit  = max(0, $targetMasuk->diffInMinutes($now, false));
+        $status      = $telatMenit > 0 ? 'telat' : 'hadir';
+
         $rec->update([
-            'jam_masuk' => $now->format('H:i:s'),
-            'latitude'  => $request->latitude,
-            'longitude' => $request->longitude,
-            'status'    => 'hadir',
+            'jam_masuk'   => $now->format('H:i:s'),
+            'latitude'    => $request->latitude,
+            'longitude'   => $request->longitude,
+            'status'      => $status,
+            'telat_menit' => $telatMenit ?: null,
         ]);
 
-        return redirect()->route('tu.absensi.index')->with('success', 'Presensi MASUK berhasil!');
+        $msg = $status === 'telat'
+            ? "Presensi MASUK tersimpan. (Telat " .
+              (intdiv($telatMenit,60) ? intdiv($telatMenit,60).' jam ' : '') .
+              ($telatMenit%60 ? ($telatMenit%60).' menit' : (intdiv($telatMenit,60)?'':'0 menit')) . ")"
+            : "Presensi MASUK tersimpan. Tepat waktu.";
+
+        return redirect()->route('tu.absensi.index')->with('success', $msg);
     }
 
     /* ===================== Form & Store KELUAR ===================== */
@@ -185,11 +307,9 @@ class TuSelfPresensiController extends Controller
     {
         $now         = $this->nowWIB();
         $base        = $this->base();
-        $mulaiKeluar = config('presensi.jam_keluar_start', '16:00');
+        $mulaiKeluar = $this->timeOr('presensi.jam_keluar_start', '16:00');
 
-        $allowKeluar = $now->greaterThanOrEqualTo(
-            $now->copy()->setTimeFromTimeString($mulaiKeluar)
-        );
+        $allowKeluar = $now->greaterThanOrEqualTo($this->atToday($mulaiKeluar, $now));
 
         return view('tu.absensi.form', [
             'mode'          => 'keluar',
@@ -210,10 +330,9 @@ class TuSelfPresensiController extends Controller
         ]);
 
         $now         = $this->nowWIB();
-        $mulaiKeluar = config('presensi.jam_keluar_start', '16:00');
+        $mulaiKeluar = $this->timeOr('presensi.jam_keluar_start', '16:00');
 
-        // validasi waktu
-        if ($now->lt($now->copy()->setTimeFromTimeString($mulaiKeluar))) {
+        if ($now->lt($this->atToday($mulaiKeluar, $now))) {
             return back()->with('message', "Presensi keluar dibuka {$mulaiKeluar}")->withInput();
         }
 
@@ -231,7 +350,7 @@ class TuSelfPresensiController extends Controller
 
         $rec = Presensi::where('user_id', $user->id)->where('tanggal', $today)->first();
 
-        if (! $rec || ! $rec->jam_masuk) {
+        if (!$rec || !$rec->jam_masuk) {
             return back()->with('message', 'Silakan presensi MASUK terlebih dahulu.');
         }
         if ($rec->jam_keluar) {
@@ -263,28 +382,27 @@ class TuSelfPresensiController extends Controller
     }
 
     public function izinStore(Request $request)
-{
-    $request->validate([
-        'tgl_mulai'   => 'required|date',
-        'tgl_selesai' => 'nullable|date|after_or_equal:tgl_mulai',
-        'jenis'       => 'required|in:izin,sakit',
-        'keterangan'  => 'nullable|string|max:500',
-    ]);
+    {
+        $request->validate([
+            'tgl_mulai'   => 'required|date',
+            'tgl_selesai' => 'nullable|date|after_or_equal:tgl_mulai',
+            'jenis'       => 'required|in:izin,sakit',
+            'keterangan'  => 'nullable|string|max:500',
+        ]);
 
-    Izin::create([
-        'user_id'     => Auth::id(),
-        'tgl_mulai'   => $request->tgl_mulai,
-        // jika kosong, samakan dengan tgl_mulai (izin 1 hari)
-        'tgl_selesai' => $request->tgl_selesai ?: $request->tgl_mulai,
-        'jenis'       => $request->jenis,
-        'keterangan'  => $request->keterangan,
-        'status'      => 'pending',
-    ]);
+        Izin::create([
+            'user_id'     => Auth::id(),
+            'tgl_mulai'   => $request->tgl_mulai,
+            'tgl_selesai' => $request->tgl_selesai ?: $request->tgl_mulai,
+            'jenis'       => $request->jenis,
+            'keterangan'  => $request->keterangan,
+            'status'      => 'pending',
+        ]);
 
-    return redirect()
-    ->route('tu.absensi.index', ['tab' => 'izin'])
-    ->with('success', 'Permohonan izin dikirim.');
-}
+        return redirect()
+            ->route('tu.absensi.index', ['tab' => 'izin'])
+            ->with('success', 'Permohonan izin dikirim.');
+    }
 
     public function izinShow(Izin $izin)
     {

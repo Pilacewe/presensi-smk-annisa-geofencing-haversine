@@ -16,8 +16,27 @@
   </div>
 @endif
 
+@php
+  // target jam telat (mengikuti pegawai)
+  $targetMasuk = config('presensi.jam_target_masuk','07:00');
+
+  // helper kecil untuk format menit -> "X jam Y menit" / "Y menit"
+  $fmtTelat = function ($m) {
+      if (!$m) return null;
+      $h = intdiv((int)$m, 60);
+      $mm = ((int)$m) % 60;
+      return $h ? ($mm ? "$h jam $mm menit" : "$h jam") : "$mm menit";
+  };
+
+  // ambil HH:MM dari field waktu
+  $hhmm = fn($v) => $v ? \Illuminate\Support\Str::of($v)->substr(0,5) : '—';
+@endphp
+
 <div class="mb-4 rounded-lg bg-emerald-50/60 border border-emerald-200 text-emerald-700 px-4 py-3 text-sm">
   Presensi masuk hanya <b>{{ $mulaiMasuk }}–{{ $akhirMasuk }}</b>. Presensi keluar <b>mulai {{ $mulaiKeluar }}</b>.
+  <span class="inline-block ml-2 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px]">
+    Target tepat waktu {{ $targetMasuk }}
+  </span>
 </div>
 
 {{-- Tabs --}}
@@ -29,7 +48,7 @@
         : "<a href=\"$href\" class=\"px-4 py-2 rounded-xl bg-white ring-1 ring-slate-200 text-sm hover:bg-slate-50\">$label</a>";
     };
   @endphp
-  {!! $pill('Absensi', route('tu.absensi.index',['tab'=>'absen']), $tab==='absen') !!}
+  {!! $pill('Presensi', route('tu.absensi.index',['tab'=>'absen']), $tab==='absen') !!}
   {!! $pill('Riwayat Saya', route('tu.absensi.index',['tab'=>'riwayat']), $tab==='riwayat') !!}
   {!! $pill('Izin Saya', route('tu.absensi.index',['tab'=>'izin']), $tab==='izin') !!}
 </div>
@@ -54,13 +73,41 @@
       <div class="grid sm:grid-cols-2 gap-5">
         {{-- Card Masuk --}}
         <div class="rounded-xl border border-slate-200 p-5">
-          <p class="text-sm text-slate-500 mb-1">Masuk ({{ $mulaiMasuk }}–{{ $akhirMasuk }})</p>
-          <div class="text-4xl font-extrabold tabular-nums" id="clockIn">--:--:--</div>
+          <div class="flex items-center justify-between">
+            <p class="text-sm text-slate-500">Masuk ({{ $mulaiMasuk }}–{{ $akhirMasuk }})</p>
+            <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
+              Target {{ $targetMasuk }}
+            </span>
+          </div>
+          <div class="mt-2 text-4xl font-extrabold tabular-nums" id="clockIn">--:--:--</div>
 
+          {{-- STATUS HARI INI (Masuk) --}}
           @if ($todayRec?->jam_masuk)
-            <div class="mt-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-              Sudah presensi masuk pukul {{ \Illuminate\Support\Str::of($todayRec->jam_masuk)->substr(0,5) }}.
-            </div>
+            @php
+              $stToday = strtolower($todayRec->status ?? '');
+              // pakai telat_menit bila ada; fallback hitung dari jam_masuk vs target
+              $telatM = $todayRec->telat_menit ?? null;
+              if (is_null($telatM) && $stToday === 'telat') {
+                  try {
+                      $tgt = \Carbon\Carbon::parse($now->format('Y-m-d') . ' ' . $targetMasuk);
+                      $jm  = \Carbon\Carbon::parse($now->format('Y-m-d') . ' ' . $todayRec->jam_masuk);
+                      $telatM = max(0, $tgt->diffInMinutes($jm, false));
+                  } catch (\Throwable $e) {
+                      $telatM = null;
+                  }
+              }
+              $durTelat = $stToday === 'telat' ? $fmtTelat($telatM) : null;
+            @endphp
+
+            @if ($stToday === 'telat')
+              <div class="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Telat {{ $durTelat ?? '—' }} (jam {{ $hhmm($todayRec->jam_masuk) }}).
+              </div>
+            @else
+              <div class="mt-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                Sudah masuk pukul {{ $hhmm($todayRec->jam_masuk) }} (tepat waktu).
+              </div>
+            @endif
           @endif
 
           <form method="POST" action="{{ route('tu.absensi.storeMasuk') }}" class="mt-5 flex items-center gap-3">
@@ -82,7 +129,7 @@
 
           @if ($todayRec?->jam_keluar)
             <div class="mt-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-              Sudah presensi keluar pukul {{ \Illuminate\Support\Str::of($todayRec->jam_keluar)->substr(0,5) }}.
+              Sudah keluar pukul {{ $hhmm($todayRec->jam_keluar) }}.
             </div>
           @endif
 
@@ -104,7 +151,7 @@
       </div>
     </section>
 
-    {{-- ====== KARTU PETA (ganti “Ringkas” lama) ====== --}}
+    {{-- ====== KARTU PETA ====== --}}
     <section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
       <div class="px-6 pt-6 flex items-center justify-between">
         <div>
@@ -226,7 +273,7 @@
     const d = Math.round(haversine(latitude, longitude, base.lat, base.lng));
     if(distInfo) distInfo.textContent = `Jarak ke titik presensi: ± ${d} m (radius ${base.radius} m)`;
 
-    if(map){ // tampilkan posisi user di peta
+    if(map){
       if(!meMarker){
         meMarker = L.marker([latitude, longitude], {
           title:'Posisi Anda',

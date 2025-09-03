@@ -6,57 +6,104 @@ use App\Http\Controllers\Controller;
 use App\Models\Presensi;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 
 class AdminPresensiController extends Controller
 {
+    /**
+     * List & filter presensi — khusus role guru & tu.
+     */
     public function index(Request $request)
     {
-        $q      = trim($request->get('q', ''));
-        $role   = $request->get('role');   // admin|guru|tu|piket|kepsek
-        $status = $request->get('status'); // hadir|izin|sakit|alfa
-        $start  = $request->get('start');  // yyyy-mm-dd
-        $end    = $request->get('end');    // yyyy-mm-dd
+        // ===== Role yang diperbolehkan di halaman ini
+        $allowedRoles = ['guru', 'tu'];
 
+        // ===== Param filter
+        $q      = trim((string) $request->get('q', ''));
+        $role   = $request->get('role');     // guru|tu|null
+        $status = $request->get('status');   // hadir|telat|izin|sakit|alfa|null
+        $start  = $request->get('start');    // yyyy-mm-dd
+        $end    = $request->get('end');      // yyyy-mm-dd
+
+        // Default rentang tanggal: 7 hari terakhir s.d. hari ini
+        $defStart = Carbon::now()->subDays(7)->toDateString();
+        $defEnd   = Carbon::now()->toDateString();
+        $start    = $start ?: $defStart;
+        $end      = $end   ?: $defEnd;
+        if ($end < $start) $end = $start; // normalisasi
+
+        // Validasi nilai role & status yang masuk
+        if ($role && !in_array($role, $allowedRoles, true))   { $role = null; }
+        $validStatus = ['hadir','telat','izin','sakit','alfa'];
+        if ($status && !in_array($status, $validStatus, true)){ $status = null; }
+
+        // ===== Query utama: batasi *selalu* ke user guru|tu
         $items = Presensi::with(['user:id,name,role'])
-            ->when($q, function($qq) use ($q){
-                $qq->whereHas('user', fn($u)=>$u->where('name','like',"%$q%")
-                                                ->orWhere('email','like',"%$q%"));
+            ->whereBetween('tanggal', [$start, $end])
+            ->whereHas('user', function ($u) use ($allowedRoles, $role) {
+                $u->whereIn('role', $allowedRoles);
+                if ($role) $u->where('role', $role);
             })
-            ->when($role, fn($qr)=>$qr->whereHas('user', fn($u)=>$u->where('role',$role)))
+            ->when($q, function($qq) use ($q){
+                $qq->whereHas('user', function($u) use ($q){
+                    $u->where('name','like',"%{$q}%")
+                      ->orWhere('email','like',"%{$q}%");
+                });
+            })
             ->when($status, fn($qs)=>$qs->where('status',$status))
-            ->when($start, fn($d)=>$d->whereDate('tanggal','>=',$start))
-            ->when($end,   fn($d)=>$d->whereDate('tanggal','<=',$end))
-            ->orderByDesc('tanggal')->orderByDesc('updated_at')
-            ->paginate(15)->withQueryString();
+            ->orderByDesc('tanggal')
+            ->orderByDesc('updated_at')
+            ->paginate(20)
+            ->withQueryString();
 
-        // Ringkas kecil untuk tampilan
+        // ===== Ringkasan dengan constraint yang sama
+        $baseSummary = Presensi::query()
+            ->whereBetween('tanggal', [$start, $end])
+            ->whereHas('user', function ($u) use ($allowedRoles, $role) {
+                $u->whereIn('role', $allowedRoles);
+                if ($role) $u->where('role', $role);
+            })
+            ->select([
+                DB::raw("SUM(CASE WHEN status='hadir' THEN 1 ELSE 0 END) as s_hadir"),
+                DB::raw("SUM(CASE WHEN status='telat' THEN 1 ELSE 0 END) as s_telat"),
+                DB::raw("SUM(CASE WHEN status='izin'  THEN 1 ELSE 0 END) as s_izin"),
+                DB::raw("SUM(CASE WHEN status='sakit' THEN 1 ELSE 0 END) as s_sakit"),
+                DB::raw("SUM(CASE WHEN status='alfa'  THEN 1 ELSE 0 END) as s_alfa"),
+            ])->first();
+
         $ringkas = [
-            'total' => (clone $items)->total(),
-            'hadir' => Presensi::when($role, fn($qr)=>$qr->whereHas('user', fn($u)=>$u->where('role',$role)))
-                               ->when($start, fn($d)=>$d->whereDate('tanggal','>=',$start))
-                               ->when($end,   fn($d)=>$d->whereDate('tanggal','<=',$end))
-                               ->where('status','hadir')->count(),
-            'izin'  => Presensi::when($role, fn($qr)=>$qr->whereHas('user', fn($u)=>$u->where('role',$role)))
-                               ->when($start, fn($d)=>$d->whereDate('tanggal','>=',$start))
-                               ->when($end,   fn($d)=>$d->whereDate('tanggal','<=',$end))
-                               ->where('status','izin')->count(),
-            'sakit' => Presensi::when($role, fn($qr)=>$qr->whereHas('user', fn($u)=>$u->where('role',$role)))
-                               ->when($start, fn($d)=>$d->whereDate('tanggal','>=',$start))
-                               ->when($end,   fn($d)=>$d->whereDate('tanggal','<=',$end))
-                               ->where('status','sakit')->count(),
-            'alfa'  => Presensi::when($role, fn($qr)=>$qr->whereHas('user', fn($u)=>$u->where('role',$role)))
-                               ->when($start, fn($d)=>$d->whereDate('tanggal','>=',$start))
-                               ->when($end,   fn($d)=>$d->whereDate('tanggal','<=',$end))
-                               ->where('status','alfa')->count(),
+            // Hadir = hadir + telat (lebih masuk akal untuk KPI kehadiran)
+            'hadir' => (int)($baseSummary->s_hadir ?? 0) + (int)($baseSummary->s_telat ?? 0),
+            'telat' => (int)($baseSummary->s_telat ?? 0), // tersedia jika mau dipakai di UI nanti
+            'izin'  => (int)($baseSummary->s_izin  ?? 0),
+            'sakit' => (int)($baseSummary->s_sakit ?? 0),
+            'alfa'  => (int)($baseSummary->s_alfa  ?? 0),
         ];
 
-        return view('admin.presensi.index', compact('items','ringkas','q','role','status','start','end'));
+        return view('admin.presensi.index', [
+            'items'  => $items,     // paginator
+            'ringkas'=> $ringkas,
+            'q'      => $q,
+            'role'   => $role,
+            'status' => $status,
+            'start'  => $start,
+            'end'    => $end,
+            // default untuk isi form
+            'defStart' => $defStart,
+            'defEnd'   => $defEnd,
+            // kalau perlu dropdown role di blade
+            'allowedRoles' => $allowedRoles,
+        ]);
     }
 
     public function create()
     {
-        $users = User::orderBy('name')->get(['id','name','role']);
+        // User dropdown dibatasi ke guru & tu saja
+        $users = User::whereIn('role',['guru','tu'])
+            ->orderBy('name')
+            ->get(['id','name','role']);
         return view('admin.presensi.create', compact('users'));
     }
 
@@ -65,18 +112,17 @@ class AdminPresensiController extends Controller
         $data = $request->validate([
             'user_id'    => ['required', Rule::exists('users','id')],
             'tanggal'    => ['required','date'],
-            'status'     => ['required', Rule::in(['hadir','izin','sakit','alfa'])],
+            'status'     => ['required', Rule::in(['hadir','telat','izin','sakit','alfa'])],
             'jam_masuk'  => ['nullable','date_format:H:i'],
             'jam_keluar' => ['nullable','date_format:H:i','after_or_equal:jam_masuk'],
             'keterangan' => ['nullable','string','max:500'],
         ]);
 
-        // opsional: cegah duplikat per user+tanggal
+        // Cegah duplikat per user+tanggal
         $exists = Presensi::where('user_id',$data['user_id'])
                           ->whereDate('tanggal',$data['tanggal'])->exists();
         if ($exists) {
-            return back()->withErrors(['tanggal'=>'Sudah ada presensi untuk user & tanggal ini.'])
-                         ->withInput();
+            return back()->withErrors(['tanggal'=>'Sudah ada presensi untuk user & tanggal ini.'])->withInput();
         }
 
         Presensi::create($data);
@@ -85,7 +131,9 @@ class AdminPresensiController extends Controller
 
     public function edit(Presensi $presensi)
     {
-        $users = User::orderBy('name')->get(['id','name','role']);
+        $users = User::whereIn('role',['guru','tu'])
+            ->orderBy('name')
+            ->get(['id','name','role']);
         return view('admin.presensi.edit', compact('presensi','users'));
     }
 
@@ -94,19 +142,19 @@ class AdminPresensiController extends Controller
         $data = $request->validate([
             'user_id'    => ['required', Rule::exists('users','id')],
             'tanggal'    => ['required','date'],
-            'status'     => ['required', Rule::in(['hadir','izin','sakit','alfa'])],
+            'status'     => ['required', Rule::in(['hadir','telat','izin','sakit','alfa'])],
             'jam_masuk'  => ['nullable','date_format:H:i'],
             'jam_keluar' => ['nullable','date_format:H:i','after_or_equal:jam_masuk'],
             'keterangan' => ['nullable','string','max:500'],
         ]);
 
-        // opsional: cek duplikat saat ganti user/tanggal
+        // Cegah duplikat saat update
         $exists = Presensi::where('user_id',$data['user_id'])
                           ->whereDate('tanggal',$data['tanggal'])
-                          ->where('id','!=',$presensi->id)->exists();
+                          ->where('id','!=',$presensi->id)
+                          ->exists();
         if ($exists) {
-            return back()->withErrors(['tanggal'=>'Sudah ada presensi untuk user & tanggal ini.'])
-                         ->withInput();
+            return back()->withErrors(['tanggal'=>'Sudah ada presensi untuk user & tanggal ini.'])->withInput();
         }
 
         $presensi->update($data);

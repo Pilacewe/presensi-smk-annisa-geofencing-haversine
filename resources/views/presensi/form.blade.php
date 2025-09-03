@@ -8,7 +8,11 @@
       {{ $mode==='masuk' ? 'Konfirmasi Presensi Masuk' : 'Konfirmasi Presensi Keluar' }}
     </h2>
     <p class="text-sm text-slate-500 mb-4">
-      {{ $mode==='masuk' ? "Batas masuk: $deadlineMasuk" : "Mulai keluar: $mulaiKeluar" }} · Sekarang: {{ $now->format('H:i') }}
+      @if($mode==='masuk')
+        Target hadir: {{ $targetMasuk }} · Sekarang: {{ $now->format('H:i') }}
+      @else
+        Mulai keluar: {{ $mulaiKeluar }} · Sekarang: {{ $now->format('H:i') }}
+      @endif
     </p>
 
     @if (session('message'))
@@ -33,14 +37,15 @@
       </button>
 
       @if($mode==='masuk' && !$allowMasuk)
-        <p class="text-xs text-rose-600">Presensi masuk ditutup pukul {{ $deadlineMasuk }}.</p>
+        <p class="text-xs text-rose-600">Presensi masuk belum dibuka (menunggu jam {{ config('presensi.jam_masuk_start','07:00') }}).</p>
       @endif
       @if($mode==='keluar' && !$allowKeluar)
         <p class="text-xs text-rose-600">Presensi keluar mulai pukul {{ $mulaiKeluar }}.</p>
       @endif
     </form>
   </section>
-    @if($mode==='keluar')
+
+  @if($mode==='keluar')
   {{-- Modal konfirmasi --}}
   <div id="modalKeluar" class="fixed inset-0 bg-slate-900/40 hidden items-center justify-center z-50">
     <div class="bg-white w-full max-w-md rounded-2xl p-6 shadow-xl">
@@ -56,7 +61,7 @@
       </div>
     </div>
   </div>
-@endif
+  @endif
 
   <section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
     <h3 class="text-sm font-semibold mb-3">Lokasi Presensi</h3>
@@ -64,29 +69,26 @@
     <p class="mt-2 text-xs text-slate-500">Titik & radius area ditampilkan di peta (server tetap memvalidasi).</p>
   </section>
 </div>
-{{-- Leaflet assets (CDN, gratis, tak perlu API key) --}}
+
+{{-- Leaflet assets --}}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
   const base = { lat: {{ $base['lat'] }}, lng: {{ $base['lng'] }}, radius: {{ $base['radius'] }} };
 
-  // Inisialisasi peta
   const map = L.map('map', { zoomControl: true }).setView([base.lat, base.lng], 17);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 20, attribution: '&copy; OpenStreetMap'
   }).addTo(map);
 
-  // Titik & radius geofence
   L.marker([base.lat, base.lng], { title: 'Titik Presensi' }).addTo(map);
   L.circle([base.lat, base.lng], { radius: base.radius, color: '#0ea5e9', fillColor: '#38bdf8', fillOpacity: 0.15 }).addTo(map);
 
-  // Ambil lokasi pengguna
   const latI = document.getElementById('lat');
   const lngI = document.getElementById('lng');
   const dist = document.getElementById('dist');
   const btn  = document.getElementById('btnConfirm');
-  let meMarker, accCircle;
 
   function haversine(lat1,lon1,lat2,lon2){
     const R=6371000, toRad=d=>d*Math.PI/180;
@@ -100,9 +102,9 @@
       const me = [pos.coords.latitude, pos.coords.longitude];
       latI.value = me[0]; lngI.value = me[1];
 
-      meMarker = L.marker(me, { title: 'Posisi Anda', icon: L.divIcon({className:'', html:'<div class=\"w-3 h-3 rounded-full bg-emerald-500 border-2 border-emerald-800\"></div>'}) }).addTo(map);
+      L.marker(me, { title: 'Posisi Anda', icon: L.divIcon({className:'', html:'<div class="w-3 h-3 rounded-full bg-emerald-500 border-2 border-emerald-800"></div>'}) }).addTo(map);
       if (pos.coords.accuracy) {
-        accCircle = L.circle(me, { radius: pos.coords.accuracy, color:'#16a34a', fillColor:'#22c55e', fillOpacity:0.1 }).addTo(map);
+        L.circle(me, { radius: pos.coords.accuracy, color:'#16a34a', fillColor:'#22c55e', fillOpacity:0.1 }).addTo(map);
       }
       map.panTo(me);
 
@@ -117,7 +119,9 @@
     btn.setAttribute('disabled', true);
   }
 </script>
-  <script>
+
+{{-- Modal keluar (tetap) --}}
+<script>
   @if($mode==='keluar')
   const form = document.querySelector('form');
   const modal = document.getElementById('modalKeluar');
@@ -126,26 +130,20 @@
   const btnBatal = document.getElementById('btnBatal');
   const catatan = document.getElementById('catatanKeluar');
 
-  // blok submit default -> tampilkan modal
   form.addEventListener('submit', function(e){
     e.preventDefault();
     if (btn.hasAttribute('disabled')) return;
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    modal.classList.remove('hidden'); modal.classList.add('flex');
   });
 
   btnBatal?.addEventListener('click', ()=>{
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
+    modal.classList.add('hidden'); modal.classList.remove('flex');
   });
 
   btnYakin?.addEventListener('click', ()=>{
-    // kalau ingin kirim catatan, tambahkan input hidden
     if (catatan && catatan.value.trim() !== '') {
       const hidden = document.createElement('input');
-      hidden.type = 'hidden';
-      hidden.name = 'catatan';
-      hidden.value = catatan.value.trim();
+      hidden.type = 'hidden'; hidden.name = 'catatan'; hidden.value = catatan.value.trim();
       form.appendChild(hidden);
     }
     modal.classList.add('hidden'); modal.classList.remove('flex');
@@ -154,18 +152,13 @@
   @endif
 </script>
 
+{{-- Countdown kecil (info) --}}
 <p id="countdown" class="text-xs text-slate-500"></p>
 <script>
   const cd = document.getElementById('countdown');
   @if($mode==='masuk')
-    const end = "{{ $now->format('Y-m-d') }} {{ config('presensi.jam_masuk_end') }}:00";
-    const endAt = new Date(end.replace(' ', 'T'));
-    setInterval(()=>{
-      const diff = endAt - new Date();
-      if(diff <= 0){ cd.textContent = 'Waktu presensi masuk telah berakhir.'; return; }
-      const m = Math.floor(diff/60000)%60, s = Math.floor(diff/1000)%60;
-      cd.textContent = `Tutup dalam ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    },1000);
+    // Untuk mode masuk, kita tidak menutup waktu. Tampilkan info target saja.
+    cd.textContent = 'Presensi masuk dibuka sejak {{ config('presensi.jam_masuk_start','07:00') }}, telat dihitung setelah {{ $targetMasuk }}.';
   @else
     const start = "{{ $now->format('Y-m-d') }} {{ config('presensi.jam_keluar_start') }}:00";
     const startAt = new Date(start.replace(' ', 'T'));
@@ -177,5 +170,4 @@
     },1000);
   @endif
 </script>
-
 @endsection

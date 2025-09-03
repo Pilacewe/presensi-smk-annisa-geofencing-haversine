@@ -56,7 +56,7 @@
           {{-- Menu tengah (tanpa ikon) --}}
           <nav class="flex items-center gap-1">
             {!! $link(route('piket.dashboard'),   'piket.dashboard',   'Dashboard') !!}
-            {!! $link(route('piket.cek'),         'piket.cek',         'Ngecek Guru') !!}
+            {!! $link(route('piket.cek'),         'piket.cek',         'Presensi Guru') !!}
             {!! $link(route('piket.rekap'),       'piket.rekap',       'Rekap Harian') !!}
             {!! $link(route('piket.absen.create'),     'piket.absen.create',     'Presensi Manual') !!}
            
@@ -129,7 +129,7 @@
         @endphp
 
         {!! $m(route('piket.dashboard'), 'piket.dashboard', 'Dashboard') !!}
-        {!! $m(route('piket.cek'),       'piket.cek',       'Ngecek Guru') !!}
+        {!! $m(route('piket.cek'),       'piket.cek',       'Presensi Guru') !!}
         {!! $m(route('piket.rekap'),     'piket.rekap',     'Rekap Harian') !!}
         {!! $m(route('piket.absen.create'),   'piket.absen.create',   'Presensi Manual') !!}
         {!! $m(route('piket.riwayat'),   'piket.riwayat',   'Riwayat') !!}

@@ -1,121 +1,120 @@
 @extends('layouts.admin')
-
 @section('title','Izin Pegawai')
-@section('subtitle','Kelola pengajuan izin/sakit lintas role')
+
+@php
+  $fmtDate = fn($d) => \Carbon\Carbon::parse($d)->translatedFormat('d M Y');
+  $badge = fn($st) => [
+    'pending'  => 'bg-amber-50  text-amber-700  ring-amber-200',
+    'approved' => 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    'rejected' => 'bg-rose-50   text-rose-700   ring-rose-200',
+  ][$st] ?? 'bg-slate-50 text-slate-700 ring-slate-200';
+@endphp
 
 @section('actions')
-  <a href="{{ route('tu.export.index') }}" class="px-3 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-sm">
-    Laporan / Export
-  </a>
+  <form method="GET" class="flex items-center gap-2">
+    <select name="status" class="rounded-lg border-slate-300 text-sm">
+      <option value="">Semua status</option>
+      <option value="pending"  @selected(($status ?? '')==='pending')>Pending</option>
+      <option value="approved" @selected(($status ?? '')==='approved')>Approved</option>
+      <option value="rejected" @selected(($status ?? '')==='rejected')>Rejected</option>
+    </select>
+    <select name="jenis" class="rounded-lg border-slate-300 text-sm">
+      <option value="">Semua jenis</option>
+      <option value="izin"  @selected(($jenis ?? '')==='izin')>Izin</option>
+      <option value="sakit" @selected(($jenis ?? '')==='sakit')>Sakit</option>
+    </select>
+    <input type="text" name="q" value="{{ $q ?? '' }}" placeholder="Cari nama/keterangan…" class="rounded-lg border-slate-300 text-sm">
+    <button class="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm">Terapkan</button>
+    <a href="{{ route('admin.izin.index') }}" class="px-3 py-2 rounded-lg bg-slate-100 text-sm">Reset</a>
+  </form>
 @endsection
 
 @section('content')
-  {{-- Flash --}}
-  @if (session('success'))
-    <div class="mb-4 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-3">
-      {{ session('success') }}
-    </div>
-  @endif
-
-  {{-- Ringkasan --}}
-  <div class="grid sm:grid-cols-3 gap-4 mb-6">
-    <div class="rounded-2xl ring-1 ring-amber-200 bg-white p-4">
-      <p class="text-xs text-slate-500">Pending</p>
-      <p class="mt-1 text-2xl font-extrabold tabular-nums text-amber-700">{{ $summary['pending'] ?? 0 }}</p>
-    </div>
-    <div class="rounded-2xl ring-1 ring-emerald-200 bg-white p-4">
-      <p class="text-xs text-slate-500">Approved</p>
-      <p class="mt-1 text-2xl font-extrabold tabular-nums text-emerald-700">{{ $summary['approved'] ?? 0 }}</p>
-    </div>
-    <div class="rounded-2xl ring-1 ring-rose-200 bg-white p-4">
-      <p class="text-xs text-slate-500">Rejected</p>
-      <p class="mt-1 text-2xl font-extrabold tabular-nums text-rose-700">{{ $summary['rejected'] ?? 0 }}</p>
-    </div>
+  <div class="grid sm:grid-cols-3 gap-4 mb-4">
+    <div class="rounded-xl bg-white ring-1 ring-amber-200 p-4"><p class="text-xs">Pending</p><p class="text-2xl font-bold tabular-nums text-amber-700">{{ $summary['pending'] ?? 0 }}</p></div>
+    <div class="rounded-xl bg-white ring-1 ring-emerald-200 p-4"><p class="text-xs">Approved</p><p class="text-2xl font-bold tabular-nums text-emerald-700">{{ $summary['approved'] ?? 0 }}</p></div>
+    <div class="rounded-xl bg-white ring-1 ring-rose-200 p-4"><p class="text-xs">Rejected</p><p class="text-2xl font-bold tabular-nums text-rose-700">{{ $summary['rejected'] ?? 0 }}</p></div>
   </div>
 
-  {{-- Filter bar --}}
-  <form class="mb-4 grid lg:grid-cols-5 gap-3 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-4">
-    <select name="status" class="rounded-lg border-slate-300">
-      <option value="">– Semua Status –</option>
-      <option value="pending"  @selected($status==='pending')>Pending</option>
-      <option value="approved" @selected($status==='approved')>Approved</option>
-      <option value="rejected" @selected($status==='rejected')>Rejected</option>
-    </select>
-
-    <select name="bulan" class="rounded-lg border-slate-300">
-      <option value="">– Bulan –</option>
-      @foreach($listBulan as $k=>$v)
-        <option value="{{ $k }}" @selected($bulan==$k)>{{ $v }}</option>
-      @endforeach
-    </select>
-
-    <select name="tahun" class="rounded-lg border-slate-300">
-      <option value="">– Tahun –</option>
-      @foreach($listTahun as $th)
-        <option value="{{ $th }}" @selected($tahun==$th)>{{ $th }}</option>
-      @endforeach
-    </select>
-
-    <select name="user_id" class="rounded-lg border-slate-300">
-      <option value="">– Semua Pegawai –</option>
-      @foreach($users as $u)
-        <option value="{{ $u->id }}" @selected($userId==$u->id)>{{ $u->name }} ({{ strtoupper($u->role) }})</option>
-      @endforeach
-    </select>
-
-    <div class="flex items-center gap-2">
-      <button class="px-3 py-2 rounded-lg bg-slate-900 text-white">Terapkan</button>
-      <a href="{{ route('admin.izin.index') }}" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200">Reset</a>
-    </div>
-  </form>
-
-  {{-- Tabel --}}
-  <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50">
-        <tr class="text-left text-slate-500 border-b">
-          <th class="px-4 py-3">Tanggal</th>
-          <th class="px-4 py-3">Pegawai</th>
-          <th class="px-4 py-3">Role</th>
-          <th class="px-4 py-3">Jenis</th>
-          <th class="px-4 py-3">Status</th>
+  <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 text-slate-600">
+        <tr>
+          <th class="px-4 py-3 text-left">Pemohon</th>
+          <th class="px-4 py-3 text-left">Jenis</th>
+          <th class="px-4 py-3 text-left">Rentang</th>
+          <th class="px-4 py-3 text-left">Keterangan</th>
+          <th class="px-4 py-3 text-center">Bukti</th>
+          <th class="px-4 py-3 text-center">Status</th>
           <th class="px-4 py-3 text-right">Aksi</th>
         </tr>
       </thead>
-      <tbody>
-        @forelse($data as $row)
+      <tbody class="divide-y">
+        @forelse($items as $r)
           @php
-            $badge = match($row->status){
-              'approved' => 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-              'rejected' => 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
-              default    => 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
-            };
+            $ext      = \Illuminate\Support\Str::lower(pathinfo($r->bukti ?? '', PATHINFO_EXTENSION));
+            $isImg    = in_array($ext, ['jpg','jpeg','png','gif','webp']);
+            $rentang  = $fmtDate($r->tgl_mulai) . ' – ' . $fmtDate($r->tgl_selesai ?: $r->tgl_mulai);
+            $buktiUrl = $r->bukti ? route('admin.izin.bukti', $r->id) : null;
           @endphp
-          <tr class="border-b last:border-0">
-            <td class="px-4 py-3">{{ \Carbon\Carbon::parse($row->tanggal)->format('Y-m-d') }}</td>
-            <td class="px-4 py-3 font-medium">{{ $row->user?->name ?? '—' }}</td>
-            <td class="px-4 py-3 uppercase text-xs text-slate-500">{{ $row->user?->role ?? '-' }}</td>
-            <td class="px-4 py-3 capitalize">{{ $row->jenis }}</td>
-            <td class="px-4 py-3">
-              <span class="px-2.5 py-1 rounded-full text-xs {{ $badge }}">{{ ucfirst($row->status) }}</span>
+          <tr class="hover:bg-slate-50/60 align-top">
+            <td class="px-4 py-3 font-medium text-slate-800">{{ $r->user?->name ?? '—' }}</td>
+            <td class="px-4 py-3 capitalize">{{ $r->jenis }}</td>
+            <td class="px-4 py-3 whitespace-nowrap">{{ $rentang }}</td>
+            <td class="px-4 py-3">{{ $r->keterangan ?: '—' }}</td>
+            
+            <td class="px-4 py-3 text-center">
+              @if($buktiUrl)
+                @if($isImg)
+                  <a href="{{ $buktiUrl }}" target="_blank" class="inline-block">
+                    <img src="{{ $buktiUrl }}" alt="bukti" class="h-12 w-auto rounded-lg ring-1 ring-slate-200 object-cover">
+                  </a>
+                @else
+                  <a href="{{ $buktiUrl }}" target="_blank"
+                    class="inline-flex items-center gap-2 px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-xs">
+                    Lihat berkas
+                  </a>
+                @endif
+              @else
+                <span class="text-slate-400">—</span>
+              @endif
             </td>
-            <td class="px-4 py-3 text-right">
-              <a href="{{ route('admin.izin.show',$row) }}"
-                 class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200">
-                Detail
-              </a>
+            <td class="px-4 py-3 text-center">
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium ring-1 {{ $badge($r->status) }}">{{ strtoupper($r->status) }}</span>
+            </td>
+            <td class="px-4 py-3">
+              <div class="flex justify-end gap-2">
+                @if($r->status==='pending')
+                  {{-- SETUJUI --}}
+              <form action="{{ route('admin.izin.approve',$r->id) }}" method="POST" onsubmit="return confirm('Setujui izin ini?')">
+                @csrf
+                @method('PATCH')
+                <button class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-700">Setujui</button>
+              </form>
+
+              {{-- TOLAK --}}
+              <form action="{{ route('admin.izin.reject',$r->id) }}" method="POST" onsubmit="return confirm('Tolak izin ini?')">
+                @csrf
+                @method('PATCH')
+                <input type="hidden" name="reject_reason" value="">
+                <button class="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs hover:bg-rose-700">Tolak</button>
+              </form>
+                @endif
+
+                {{-- tombol hapus selalu tersedia --}}
+                <form action="{{ route('admin.izin.destroy',$r->id) }}" method="POST" onsubmit="return confirm('Hapus pengajuan ini? Tindakan akan menghapus presensi otomatisnya juga.')">
+                  @csrf @method('DELETE')
+                  <button class="px-3 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-xs hover:bg-slate-50">Hapus</button>
+                </form>
+              </div>
             </td>
           </tr>
         @empty
-          <tr>
-            <td colspan="6" class="px-4 py-6 text-center text-slate-500">Tidak ada data.</td>
-          </tr>
+          <tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">Tidak ada data.</td></tr>
         @endforelse
       </tbody>
     </table>
   </div>
 
-  <div class="mt-4">
-    {{ $data->links() }}
-  </div>
+  <div class="mt-4">{{ $items->links() }}</div>
 @endsection
