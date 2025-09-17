@@ -97,10 +97,164 @@ class AdminTuController extends Controller
         // Terbaru
         $recentUsers = User::where('role','tu')->latest()->take(6)->get();
 
+        /* ===========================================================
+         * === DATASET VISUALISASI (STACKED BAR, gaya halaman guru) ===
+         * - Periode: bulan berjalan s.d. hari ini
+         * - “Belum Absen” dihitung per hari kerja (Sen–Jum)
+         *   sejak max(created_at, awal bulan) hingga hari ini,
+         *   dikurangi hari yang sudah tercatat (Hadir/Telat)
+         *   atau tertutup Izin/Sakit (approved).
+         * ===========================================================
+         */
+        $tz         = config('app.timezone', 'Asia/Jakarta');
+        $todayCal   = Carbon::now($tz)->toDateString();
+        $monthStart = Carbon::now($tz)->startOfMonth()->toDateString();
+
+        // ====== Kesimpulan (TOP 5) ======
+// Paling rajin = jumlah HADIR terbanyak pada bulan berjalan
+$topRajinTU = \App\Models\Presensi::with('user:id,name')
+    ->whereIn('user_id', $tuIds)
+    ->whereBetween('tanggal', [$monthStart, $todayCal])
+    ->select(
+        'user_id',
+        \DB::raw("SUM(CASE WHEN status='hadir' THEN 1 ELSE 0 END) as jml_hadir")
+    )
+    ->groupBy('user_id')
+    ->orderByDesc('jml_hadir')
+    ->limit(5)
+    ->get();
+
+// Paling sering telat = jumlah TELAT terbanyak + total menit telat
+$topTelatTU = \App\Models\Presensi::with('user:id,name')
+    ->whereIn('user_id', $tuIds)
+    ->whereBetween('tanggal', [$monthStart, $todayCal])
+    ->where('status', 'telat')
+    ->select(
+        'user_id',
+        \DB::raw('COUNT(*) as jml_telat'),
+        \DB::raw('SUM(COALESCE(telat_menit,0)) as total_menit')
+    )
+    ->groupBy('user_id')
+    ->orderByDesc('jml_telat')
+    ->limit(5)
+    ->get();
+
+        // Semua TU (dengan created_at untuk baseline per-user)
+        $tuUsers = User::where('role','tu')
+            ->orderBy('name')
+            ->get(['id','name','created_at']);
+
+        // === Presensi bulan ini (hadir/telat) -> map per user per tanggal
+$presRows = Presensi::whereBetween('tanggal', [$monthStart, $todayCal])
+    ->whereIn('user_id', $tuUsers->pluck('id'))
+    ->get(['user_id','tanggal','status','telat_menit']);
+
+$presMap  = [];  // $presMap[uid][Y-m-d] = status
+$hadirAgg = [];  // total hadir per user (bulan ini)
+$telatAgg = [];  // total telat per user (bulan ini)
+
+foreach ($presRows as $pr) {
+    $uid = (int) $pr->user_id;
+
+    // pastikan key tanggal berupa string 'Y-m-d', bukan objek Carbon
+    $tgl = $pr->tanggal instanceof \DateTimeInterface
+        ? $pr->tanggal->format('Y-m-d')
+        : \Illuminate\Support\Carbon::parse($pr->tanggal)->toDateString();
+
+    // inisialisasi slot user
+    if (!isset($presMap[$uid])) $presMap[$uid] = [];
+
+    // tandai presensi tercatat di tanggal tsb.
+    $presMap[$uid][$tgl] = $pr->status;
+
+    if ($pr->status === 'hadir') {
+        $hadirAgg[$uid] = ($hadirAgg[$uid] ?? 0) + 1;
+    } elseif ($pr->status === 'telat') {
+        $telatAgg[$uid] = ($telatAgg[$uid] ?? 0) + 1;
+    }
+}
+
+        // Izin/Sakit approved yang overlap bulan ini
+        $izinRows = Izin::where('status','approved')
+            ->whereIn('user_id', $tuUsers->pluck('id'))
+            ->where(function($q) use ($monthStart,$todayCal){
+                $q->whereBetween('tgl_mulai',   [$monthStart,$todayCal])
+                  ->orWhereBetween('tgl_selesai',[$monthStart,$todayCal])
+                  ->orWhere(function($qq) use($monthStart,$todayCal){
+                      $qq->where('tgl_mulai','<=',$monthStart)->where('tgl_selesai','>=',$todayCal);
+                  });
+            })
+            ->get(['user_id','jenis','tgl_mulai','tgl_selesai']); // jenis: izin|sakit
+
+        // Expand ke per-hari kerja (Sen–Jum) agar konsisten dengan “Belum”
+        $izinDays  = [];  // $izinDays[uid][Y-m-d] = 'izin'|'sakit'
+        foreach ($izinRows as $iz) {
+            $uid   = (int)$iz->user_id;
+            $startD = Carbon::parse(max($iz->tgl_mulai, $monthStart));
+            $endD   = Carbon::parse(min($iz->tgl_selesai, $todayCal));
+            for ($d = $startD->copy(); $d->lte($endD); $d->addDay()) {
+                if (in_array($d->dayOfWeekIso, [6,7])) continue; // skip Sabtu/Minggu
+                $izinDays[$uid][$d->toDateString()] = $iz->jenis; // izin/sakit
+            }
+        }
+
+        // Susun dataset chart
+        $chartLabels = [];
+        $chartHadir  = [];
+        $chartTelat  = [];
+        $chartIzin   = [];
+        $chartSakit  = [];
+        $chartBelum  = [];
+
+        foreach ($tuUsers as $u) {
+            $chartLabels[] = $u->name;
+            $uid = (int)$u->id;
+
+            // baseline mulai hitung: max(created_at, awal bulan)
+            $userStart = Carbon::parse($u->created_at)->startOfDay()->toDateString();
+            $startCnt  = Carbon::parse(max($userStart, $monthStart));
+            $endCnt    = Carbon::parse($todayCal);
+
+            $workdays = 0; $izinHari = 0; $sakitHari = 0; $tercatat = 0;
+
+            for ($d = $startCnt->copy(); $d->lte($endCnt); $d->addDay()) {
+                if (in_array($d->dayOfWeekIso, [6,7])) continue; // hanya hari kerja
+                $tgl = $d->toDateString();
+                $workdays++;
+
+                if (!empty($presMap[$uid][$tgl])) { // Hadir/Telat tercatat
+                    $tercatat++;
+                    continue;
+                }
+                if (!empty($izinDays[$uid][$tgl])) {
+                    if ($izinDays[$uid][$tgl] === 'sakit') $sakitHari++;
+                    else $izinHari++;
+                }
+            }
+
+            $h  = (int)($hadirAgg[$uid] ?? 0);
+            $t  = (int)($telatAgg[$uid] ?? 0);
+            $iz = (int)$izinHari;
+            $sa = (int)$sakitHari;
+            $bl = max($workdays - ($h + $t + $iz + $sa), 0);
+
+            $chartHadir[] = $h;
+            $chartTelat[] = $t;
+            $chartIzin[]  = $iz;
+            $chartSakit[] = $sa;
+            $chartBelum[] = $bl;
+        }
+
+        $chartPeriod = Carbon::now($tz)->translatedFormat('F Y');
+
         return view('admin.tu.index', compact(
             'items','summary','todayStats','pendingIzin',
-            'leaderboardHadir','leaderboardTelat','recentUsers','q','active'
+            'leaderboardHadir','leaderboardTelat','recentUsers','q','active',
+            // === kirim ke view untuk kesimpulan & chart ===
+            'chartLabels','chartHadir','chartTelat','chartIzin','chartSakit','chartBelum','chartPeriod',
+            'topRajinTU','topTelatTU'
         ));
+
     }
 
     public function create()
@@ -280,4 +434,3 @@ class AdminTuController extends Controller
         return back()->with('success',"Import selesai. Tambah: {$inserted}, Lewati: {$skipped}.");
     }
 }
-    

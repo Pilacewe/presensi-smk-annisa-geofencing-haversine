@@ -262,72 +262,117 @@
   <div class="pt-2">{{ $items->links() }}</div>
 
   {{-- ===== Visualisasi Leaderboard (Bulan Ini) ===== --}}
-  <section class="rounded-2xl bg-white ring-1 ring-slate-200 p-5 shadow-sm">
-    <div class="flex items-center justify-between">
-      <h3 class="font-semibold text-slate-900">Visualisasi Leaderboard (Bulan Ini)</h3>
-      <span class="text-xs text-slate-500">{{ now()->startOfMonth()->format('d M') }}–{{ now()->endOfMonth()->format('d M Y') }}</span>
-    </div>
+{{-- ===== Rekap Presensi Bulanan (Visualisasi) ===== --}}
+<section class="rounded-2xl bg-white ring-1 ring-slate-200 p-5 shadow-sm">
+  <div class="flex items-center justify-between gap-3">
+    <h3 class="text-xl font-semibold text-slate-900">Rekap Presensi Bulanan</h3>
 
-    {{-- Grid: Chart (2 kol) + Ringkasan (1 kol) --}}
-    <div class="mt-4 grid lg:grid-cols-3 gap-4">
-      {{-- Chart --}}
-      <div class="lg:col-span-2">
-        <div class="relative h-72 md:h-80">
-          <canvas id="guruLeaderboard"></canvas>
+    {{-- Kontrol tampilan: Top N / Semua + Sort --}}
+    <form class="flex items-center gap-2 text-xs" method="GET">
+      {{-- persist filter lain bila perlu --}}
+      <input type="hidden" name="q" value="{{ request('q') }}">
+      <input type="hidden" name="active" value="{{ request('active') }}">
+
+      <label class="inline-flex items-center gap-1">
+        <span class="text-slate-500">Tampilkan</span>
+        <select name="view" class="rounded-lg border-slate-300 py-1 px-2">
+          <option value="top" @selected($view==='top')>Top</option>
+          <option value="all" @selected($view==='all')>Semua</option>
+        </select>
+      </label>
+
+      <label class="inline-flex items-center gap-1 {{ $view==='all' ? 'opacity-40 pointer-events-none' : '' }}">
+        <span class="text-slate-500">N</span>
+        <select name="n" class="rounded-lg border-slate-300 py-1 px-2">
+          @foreach([8,12,16,20] as $n)
+            <option value="{{ $n }}" @selected((int)$limit===$n)>{{ $n }}</option>
+          @endforeach
+        </select>
+      </label>
+
+      <label class="inline-flex items-center gap-1">
+        <span class="text-slate-500">Urut</span>
+        <select name="sort" class="rounded-lg border-slate-300 py-1 px-2">
+          <option value="belum" @selected($sortBy==='belum')>Belum</option>
+          <option value="telat" @selected($sortBy==='telat')>Telat</option>
+          <option value="hadir" @selected($sortBy==='hadir')>Hadir</option>
+          <option value="nama"  @selected($sortBy==='nama')>Nama</option>
+        </select>
+      </label>
+
+      <select name="dir" class="rounded-lg border-slate-300 py-1 px-2">
+        <option value="desc" @selected($dir==='desc')>↓</option>
+        <option value="asc"  @selected($dir==='asc')>↑</option>
+      </select>
+
+      <button class="ml-1 px-3 py-1.5 rounded-lg bg-slate-900 text-white">Terapkan</button>
+    </form>
+  </div>
+
+  <div class="mt-1 text-xs text-slate-500">{{ $chartPeriod }}</div>
+
+  <div class="mt-4 grid lg:grid-cols-3 gap-4">
+    {{-- Chart --}}
+    <div class="lg:col-span-2 rounded-xl border border-slate-200 p-4">
+      <div class="overflow-x-auto">
+        <div style="min-width: {{ $chartCanvasWidth }}px">
+          <div class="relative h-80">
+            <canvas id="chartRekapBulanan"></canvas>
+          </div>
         </div>
       </div>
+      <p class="mt-3 text-[11px] text-slate-500">
+        “Belum” dihitung sejak akun guru dibuat hingga periode ini (hari kerja yang sudah berjalan),
+        lalu dikurangi Hadir/Telat/Izin/Sakit pada bulan <b>{{ $chartPeriod }}</b>.
+      </p>
+    </div>
 
-      {{-- Ringkasan samping --}}
-      <div class="space-y-4">
-        <div class="rounded-xl ring-1 ring-emerald-200 bg-emerald-50/40 p-4">
-          <div class="flex items-center justify-between mb-2">
-            <h4 class="font-semibold text-emerald-800">Guru Paling Rajin</h4>
-            <span class="text-[11px] text-emerald-700">Top 10</span>
-          </div>
-          <ul class="divide-y divide-emerald-200/60">
-            @forelse($topRajin ?? [] as $r)
-              <li class="py-2 flex items-center justify-between">
-                <a class="truncate hover:underline" href="{{ route('admin.guru.show',$r->user_id) }}">
-                  {{ $r->user?->name ?? '-' }}
-                </a>
-                <span class="px-2 py-0.5 text-[11px] rounded-full bg-white text-emerald-700 ring-1 ring-emerald-300 tabular-nums">
-                  Hadir {{ (int)($r->jml_hadir ?? 0) }}
+    {{-- Ringkasan Top 5 --}}
+    <div class="space-y-4">
+      <div class="rounded-xl ring-1 ring-emerald-200 bg-emerald-50/50 p-4">
+        <div class="flex items-center justify-between">
+          <h4 class="font-semibold text-emerald-800">Guru Paling Rajin</h4>
+          <span class="text-[11px] text-emerald-700">Top 5</span>
+        </div>
+        <ul class="divide-y divide-emerald-200/60 mt-2">
+          @forelse($topRajin as $r)
+            <li class="py-2 flex items-center justify-between">
+              <span class="truncate">{{ $r['name'] }}</span>
+              <span class="px-2 py-0.5 text-[11px] rounded-full bg-white text-emerald-700 ring-1 ring-emerald-300 tabular-nums">
+                Hadir {{ (int)$r['hadir'] }}
+              </span>
+            </li>
+          @empty
+            <li class="py-4 text-sm text-emerald-800/70">Belum ada data.</li>
+          @endforelse
+        </ul>
+      </div>
+
+      <div class="rounded-xl ring-1 ring-amber-200 bg-amber-50/50 p-4">
+        <div class="flex items-center justify-between">
+          <h4 class="font-semibold text-amber-800">Paling Sering Telat</h4>
+          <span class="text-[11px] text-amber-700">Top 5</span>
+        </div>
+        <ul class="divide-y divide-amber-200/60 mt-2">
+          @forelse($topTelat as $t)
+            <li class="py-2 grid grid-cols-3 items-center gap-2">
+              <span class="truncate col-span-2">{{ $t['name'] }}</span>
+              <div class="justify-self-end flex items-center gap-2">
+                <span class="px-2 py-0.5 text-[11px] rounded-full bg-white text-amber-700 ring-1 ring-amber-300 tabular-nums">
+                  {{ (int)$t['telat'] }}x
                 </span>
-              </li>
-            @empty
-              <li class="py-4 text-sm text-emerald-800/70">Belum ada data.</li>
-            @endforelse
-          </ul>
-        </div>
-
-        <div class="rounded-xl ring-1 ring-amber-200 bg-amber-50/40 p-4">
-          <div class="flex items-center justify-between mb-2">
-            <h4 class="font-semibold text-amber-800">Paling Sering Telat</h4>
-            <span class="text-[11px] text-amber-700">Top 10</span>
-          </div>
-          <ul class="divide-y divide-amber-200/60">
-            @forelse($topTelat ?? [] as $t)
-              <li class="py-2 grid grid-cols-3 items-center gap-2">
-                <a href="{{ route('admin.guru.show',$t->user_id) }}" class="truncate col-span-2 hover:underline">
-                  {{ $t->user?->name ?? '-' }}
-                </a>
-                <div class="justify-self-end flex items-center gap-2">
-                  <span class="px-2 py-0.5 text-[11px] rounded-full bg-white text-amber-700 ring-1 ring-amber-300 tabular-nums">
-                    {{ (int)($t->jml_telat ?? 0) }}x
-                  </span>
-                  <span class="px-2 py-0.5 text-[11px] rounded-full bg-white text-slate-700 ring-1 ring-slate-200 tabular-nums">
-                    {{ (int)($t->total_menit ?? 0) }} mnt
-                  </span>
-                </div>
-              </li>
-            @empty
-              <li class="py-4 text-sm text-amber-800/70">Belum ada data.</li>
-            @endforelse
-          </ul>
-        </div>
+              </div>
+            </li>
+          @empty
+            <li class="py-4 text-sm text-amber-800/70">Belum ada data.</li>
+          @endforelse
+        </ul>
       </div>
     </div>
-  </section>
+  </div>
+</section>
+
+
 
   {{-- Guru Terbaru --}}
   <section class="rounded-2xl bg-white ring-1 ring-slate-200 p-5 shadow-sm">
@@ -362,65 +407,116 @@
 
 {{-- ===== JS: Chart & Copy Email ===== --}}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+{{-- Tambahkan di bawah (kamu sudah load chart.js di layout atau di halaman ini) --}}
 <script>
 (function(){
-  // Copy semua email di halaman
-  const btnCopy = document.getElementById('btnCopyEmails');
-  const hint    = document.getElementById('copyHint');
-  btnCopy?.addEventListener('click', () => {
-    const emails = Array.from(document.querySelectorAll('.email-cell'))
-      .map(td => (td.textContent || '').trim())
-      .filter(Boolean);
-    if (emails.length === 0) return;
-    navigator.clipboard.writeText(emails.join(', ')).then(() => {
-      hint?.classList.remove('hidden');
-      setTimeout(()=>hint?.classList.add('hidden'), 1200);
-    });
-  });
-
-  // Chart Leaderboard
   const labels = @json($chartLabels ?? []);
-  const dataH  = @json($chartHadir ?? []);
-  const dataT  = @json($chartTelat ?? []);
-  const dataI  = @json($chartIzin ?? []);
-  const dataB  = @json($chartBelum ?? []);
+  const dHadir = @json($chartHadir ?? []);
+  const dTelat = @json($chartTelat ?? []);
+  const dIzin  = @json($chartIzin  ?? []);
+  const dSakit = @json($chartSakit ?? []);
+  const dBelum = @json($chartBelum ?? []);
 
-  const ctx = document.getElementById('guruLeaderboard')?.getContext('2d');
-  if(!ctx) return;
+  // warna
+  const C = {
+    hadir: '#059669E6',  // emerald
+    telat: '#F59E0BE6',  // amber
+    izin:  '#0EA5E9E6',  // sky
+    sakit: '#F43F5EE6',  // rose
+    belum: '#6366F1CC',  // indigo
+    belumText: '#4338CA',
+  };
 
-  const cH = 'rgba(5, 150, 105, .8)';   // emerald
-  const cT = 'rgba(245, 158, 11, .85)'; // amber
-  const cI = 'rgba(14, 165, 233, .85)'; // sky
-  const cB = 'rgba(100, 116, 139, .8)'; // slate
+  // label angka di atas bar "Belum"
+  const labelBelum = {
+    id: 'labelBelum',
+    afterDatasetsDraw(chart) {
+      const dsIndex = chart.data.datasets.findIndex(d => d.label === 'Belum');
+      if (dsIndex < 0) return;
+      const meta = chart.getDatasetMeta(dsIndex);
+      const vals = chart.data.datasets[dsIndex].data;
+      const {ctx} = chart;
+      ctx.save();
+      ctx.fillStyle = C.belumText;
+      ctx.font = 'bold 11px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      meta.data.forEach((bar, i) => {
+        const v = Number(vals[i] || 0);
+        if (!v) return;
+        ctx.fillText(v, bar.x, bar.y - 6);
+      });
+      ctx.restore();
+    }
+  };
+  Chart.register(labelBelum);
+
+  const ctx = document.getElementById('chartRekapBulanan')?.getContext('2d');
+  if (!ctx) return;
+
+  // === KUNCI: bikin 2 bar per kategori rapat (hampir tanpa celah) ===
+  const barsPerCategory = 2;              // 1 stack tercatat + 1 stack belum
+  const gapBetweenCats = 10;             // jarak antar-guru (px) — silakan kecilkan/besarkan
+  const calcThickness = () => {
+    const canvas = ctx.canvas;
+    const width = (canvas.clientWidth || canvas.width);
+    const available = width - Math.max(labels.length - 1, 0) * gapBetweenCats;
+    // lebar bar = (lebar kategori / jumlah bar per kategori)
+    return Math.max(18, Math.min(46, (available / Math.max(labels.length,1)) / barsPerCategory));
+  };
+  const barThickness = calcThickness();
+
+  // rapatkan bar (tanpa celah internal)
+  Chart.defaults.elements.bar.borderSkipped = false;
+
+  const STACK_A = 'tercatat';
+  const STACK_B = 'belum';
 
   new Chart(ctx, {
     type: 'bar',
     data: {
       labels,
       datasets: [
-        { label: 'Hadir', data: dataH, backgroundColor: cH, stack: 's', borderRadius: 6 },
-        { label: 'Telat', data: dataT, backgroundColor: cT, stack: 's', borderRadius: 6 },
-        { label: 'Izin',  data: dataI, backgroundColor: cI, stack: 's', borderRadius: 6 },
-        { label: 'Belum', data: dataB, backgroundColor: cB, stack: 's', borderRadius: 6 },
+        { label: 'Hadir', data: dHadir, backgroundColor: C.hadir, stack: STACK_A, barThickness, borderRadius: 5 },
+        { label: 'Telat', data: dTelat, backgroundColor: C.telat, stack: STACK_A, barThickness, borderRadius: 5 },
+        { label: 'Izin',  data: dIzin,  backgroundColor: C.izin,  stack: STACK_A, barThickness, borderRadius: 5 },
+        { label: 'Sakit', data: dSakit, backgroundColor: C.sakit, stack: STACK_A, barThickness, borderRadius: 5 },
+        { label: 'Belum', data: dBelum, backgroundColor: C.belum, stack: STACK_B, barThickness, borderRadius: 5 },
       ]
     },
     options: {
       responsive: true,
-      maintainAspectRatio: false,    // biar ikut tinggi container (h-72/h-80)
+      maintainAspectRatio: false,
       plugins: {
+        title: {
+          display: true,
+          text: 'Rekap Presensi Bulanan — {{ $chartPeriod }}',
+          font: { size: 14, weight: '600' },
+          padding: { top: 4, bottom: 8 }
+        },
         legend: { position: 'top', labels: { boxWidth: 12, boxHeight: 12 } },
-        tooltip: { mode: 'index', intersect: false }
+        tooltip: {
+          mode: 'index', intersect: false,
+          callbacks: {
+            footer: (items) => {
+              const sumTercatat = items
+                .filter(i => i.dataset.label !== 'Belum')
+                .reduce((s, it) => s + Number(it.parsed.y || 0), 0);
+              const belum = items.find(i => i.dataset.label === 'Belum');
+              const vBelum = Number(belum?.parsed?.y || 0);
+              return `Tercatat (H/T/I/S): ${sumTercatat}  •  Belum: ${vBelum}`;
+            }
+          }
+        }
       },
       interaction: { mode: 'index', intersect: false },
       scales: {
         x: {
           stacked: true,
-          ticks: { autoSkip: true, maxRotation: 0, minRotation: 0 },
           grid: { display: false },
-          // membuat bar tidak terlalu lebar
-          // (Chart.js menghormati kategori & bar percentage di tingkat x)
-          categoryPercentage: 0.6,
-          barPercentage: 0.9,
+          ticks: { autoSkip: false, maxRotation: 0, minRotation: 0, font: { size: 11 } },
+          // buat kategori “penuh” biar bar saling nempel, jarak hanya antar kategori
+          categoryPercentage: 1.0,
+          barPercentage: 1.0
         },
         y: {
           stacked: true,
@@ -428,12 +524,19 @@
           ticks: { precision: 0 }
         }
       },
-      // batasi ketebalan bar agar tidak melebar
-      datasets: {
-        bar: { maxBarThickness: 38 }
-      }
+      // fallback kalau Chart.js mengabaikan barThickness (tergantung versi)
+      datasets: { bar: { maxBarThickness: barThickness } }
     }
+  });
+
+  // optional: hitung ulang ketebalan saat resize
+  window.addEventListener('resize', () => {
+    // biarkan Chart.js handle responsive; ketebalan bar otomatis ikut karena width canvas berubah
   });
 })();
 </script>
+
+
+
+
 @endsection

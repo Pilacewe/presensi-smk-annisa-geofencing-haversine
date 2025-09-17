@@ -4,6 +4,7 @@
         ? 'layouts.tu'          // navbar TU (dashboard TU)
         : 'layouts.presensi';   // navbar pegawai (guru/piket)
 @endphp
+
 @php
     // Pilih layout berdasarkan role
     $layout = auth()->user()?->role === 'piket'

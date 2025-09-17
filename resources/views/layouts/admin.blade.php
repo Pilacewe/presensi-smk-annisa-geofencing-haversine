@@ -89,10 +89,7 @@
 
   $is = fn(...$r) => request()->routeIs($r);
 
-  /* ===== Deteksi halaman ROOT (tanpa tombol Back) =====
-     - Semua route yang berakhiran .dashboard atau .index
-     - Plus whitelist eksplisit jika ada yang tidak mengikuti pola
-  */
+  /* ===== Deteksi halaman ROOT (tanpa tombol Back) ===== */
   $routeName = request()->route()?->getName() ?? '';
   $isGenericRoot = Str::endsWith($routeName, ['.dashboard', '.index']);
   $extraRoot = request()->routeIs([
@@ -104,6 +101,7 @@
     'admin.presensi.index',
     'admin.izin.index',
     'admin.export.index',
+    'admin.kepsek.dashboard',   // ⬅️ ditambahkan
     'tu.dashboard',
     'tu.export.index',
     'piket.dashboard',
@@ -112,20 +110,19 @@
   $isRoot   = $isGenericRoot || $extraRoot;
   $showBack = ! $isRoot;
 
-  /* ===== SVG icon pack (ikon beda untuk Guru & TU) ===== */
+  /* ===== SVG icon pack ===== */
   $ic = [
-    'home' => '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5l9-7 9 7"/><path d="M5 10v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10"/></svg>',
-    'table'=> '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 20V10"/></svg>',
-    /* Guru: mortarboard (topi wisuda) */
-    'guru' => '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 9l-10-5L2 9l10 5 10-5z"/><path d="M6 12v5c0 1.1 2.7 2 6 2s6-.9 6-2v-5"/></svg>',
-    /* TU: briefcase */
-    'tu'   => '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6V4h4v2"/><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>',
-    /* Piket: clipboard+calendar */
-    'piket'=> '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3h8v4H8zM8 11h8M8 15h5"/></svg>',
-    'report'=>'<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12l4 4v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M16 4v4h4"/></svg>',
+    'home'  => '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5l9-7 9 7"/><path d="M5 10v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10"/></svg>',
+    'table' => '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 20V10"/></svg>',
+    'guru'  => '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 9l-10-5L2 9l10 5 10-5z"/><path d="M6 12v5c0 1.1 2.7 2 6 2s6-.9 6-2v-5"/></svg>',
+    'tu'    => '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6V4h4v2"/><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>',
+    'piket' => '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3h8v4H8zM8 11h8M8 15h5"/></svg>',
+    'report'=> '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12l4 4v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M16 4v4h4"/></svg>',
     'note'  => '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/></svg>',
     'user'  => '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>',
     'toggle'=> '<svg viewBox="0 0 24 24" class="w-4.5 h-4.5 text-slate-700" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"></rect><line x1="9" y1="4" x2="9" y2="20"></line></svg>',
+    // Ikon Kepsek (mahkota)
+    'kepsek'=> '<svg class="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l5 5 4-6 4 6 5-5v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>',
   ];
 
   /* ===== Helper item nav ===== */
@@ -182,12 +179,14 @@
         {!! $navItem(route('admin.presensi.index'), 'admin.presensi.*', 'Kelola Presensi', $ic['table']) !!}
 
         <p class="px-3 mt-3 mb-1 text-[11px] uppercase tracking-wider text-slate-400 hide-when-mini">Data Pegawai</p>
-        {!! $navItem(route('admin.guru.index'),  ['admin.guru.*'], 'Guru', $ic['guru']) !!}
-        {!! $navItem(route('admin.tu.index'),    ['admin.tu.*'],   'TU',   $ic['tu']) !!}
-        {!! $navItem(route('admin.piket.index'), ['admin.piket.*'],'Piket',$ic['piket']) !!}
+        {!! $navItem(route('admin.guru.index'),  ['admin.guru.*'], 'Guru',  $ic['guru']) !!}
+        {!! $navItem(route('admin.tu.index'),    ['admin.tu.*'],   'TU',    $ic['tu']) !!}
+        {!! $navItem(route('admin.piket.index'), ['admin.piket.*'],'Piket', $ic['piket']) !!}
+        {!! $navItem(route('admin.kepsek.index'), ['admin.kepsek.*'], 'Kepsek', $ic['kepsek']) !!}
+
 
         <p class="px-3 mt-3 mb-1 text-[11px] uppercase tracking-wider text-slate-400 hide-when-mini">Operasional</p>
-        {!! $navItem(route('tu.export.index'), ['tu.export.*','admin.export.*'], 'Laporan / Export', $ic['report']) !!}
+        {!! $navItem(route('admin.reports.index'), ['admin.reports.*'], 'Laporan / Export', $ic['report']) !!}
         {!! $navItem(route('admin.izin.index'), 'admin.izin.*', 'Izin (Semua)', $ic['note']) !!}
 
         <p class="px-3 mt-3 mb-1 text-[11px] uppercase tracking-wider text-slate-400 hide-when-mini">Akun</p>

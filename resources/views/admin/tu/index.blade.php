@@ -30,7 +30,7 @@
   @endif
 
   @php
-    $sum = $summary ?? ['total'=>0,'aktif'=>0,'nonaktif'=>0];
+    $sum   = $summary ?? ['total'=>0,'aktif'=>0,'nonaktif'=>0];
     $today = $todayStats ?? ['hadir'=>0,'telat'=>0,'izin'=>0,'sakit'=>0,'belum'=>0];
     $mini  = [
       ['Hadir',$today['hadir'],'emerald'],
@@ -39,6 +39,10 @@
       ['Sakit',$today['sakit'],'rose'],
       ['Belum',$today['belum'],'slate'],
     ];
+
+    // aman untuk top-list (tergantung controller)
+    $topRajinTu = $topRajinTU ?? collect();
+    $topTelatTu = $topTelatTU ?? collect();
   @endphp
 
   {{-- ===== Hero Cards ===== --}}
@@ -119,10 +123,7 @@
     </section>
   </div>
 
-  {{-- ===== Quick Actions khusus TU (BARU) ===== --}}
-  
-
-  {{-- ===== Filter bar ===== --}}
+  {{-- ===== Filter Bar ===== --}}
   <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
     <div class="flex items-center gap-2">
       @php
@@ -142,21 +143,7 @@
     </div>
   </div>
 
-  <div class="rounded-2xl bg-white ring-1 ring-slate-200 p-4 mb-4">
-    <form class="grid md:grid-cols-[1fr,200px,auto,auto] gap-3">
-      <input id="searchInput" type="text" name="q" value="{{ $q }}" placeholder="Cari nama / email / jabatan (tekan / untuk fokus)"
-             class="rounded-xl border-slate-300 focus:ring-indigo-200">
-      <select name="active" class="rounded-xl border-slate-300">
-        <option value="">Semua status</option>
-        <option value="1" @selected($isAct)>Aktif</option>
-        <option value="0" @selected($isInact)>Nonaktif</option>
-      </select>
-      <button class="px-4 py-2 rounded-xl bg-slate-900 text-white">Filter</button>
-      <a href="{{ route('admin.tu.index') }}" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200">Reset</a>
-    </form>
-  </div>
-
-  {{-- ===== Table ===== --}}
+  {{-- ===== Tabel ===== --}}
   <div class="rounded-2xl bg-white ring-1 ring-slate-200 overflow-hidden">
     <div class="overflow-x-auto">
       <table class="min-w-full text-sm relative z-0">
@@ -229,21 +216,89 @@
 
   <div class="mt-4">{{ $items->links() }}</div>
 
-  {{-- ===== bawah: leaderboard hadir + terbaru ===== --}}
-  <div class="grid lg:grid-cols-2 gap-4 mt-8">
-    <section class="rounded-2xl bg-white ring-1 ring-slate-200 p-5">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="font-semibold text-slate-900">Leaderboard Kehadiran (bulan ini)</h3>
-        <span class="text-xs text-slate-500">{{ now()->startOfMonth()->format('d M') }}–{{ now()->endOfMonth()->format('d M Y') }}</span>
+  {{-- ===== Visualisasi + Kesimpulan (seperti Guru) ===== --}}
+  <section class="rounded-2xl bg-white ring-1 ring-slate-200 p-5 mt-8">
+    <div class="flex items-center justify-between">
+      <h3 class="font-semibold text-slate-900">Rekap Presensi Bulanan — TU</h3>
+      <span class="text-xs text-slate-500">{{ $chartPeriod ?? now()->translatedFormat('F Y') }}</span>
+    </div>
+
+    <div class="mt-4 grid lg:grid-cols-3 gap-4">
+      {{-- Chart (2 kolom) --}}
+      <div class="lg:col-span-2 rounded-xl border border-slate-200 p-4">
+        <div class="relative h-80">
+          <canvas id="tuRekapChart"></canvas>
+        </div>
       </div>
-      <ul class="divide-y">
-        @forelse($leaderboardHadir as $row)
-          <li class="py-2 flex items-center justify-between">
-            <a href="{{ route('admin.tu.show',$row->user_id) }}" class="truncate hover:underline">{{ $row->user?->name ?? '-' }}</a>
-            <span class="px-2 py-0.5 text-xs rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 tabular-nums">{{ $row->jml }}</span>
+
+      {{-- Kesimpulan (1 kolom) --}}
+      <aside class="space-y-4">
+        <div class="rounded-xl ring-1 ring-emerald-200 bg-emerald-50/40 p-4">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-emerald-800">TU Paling Rajin</h4>
+            <span class="text-[11px] text-emerald-700">Top 5</span>
+          </div>
+          <ul class="divide-y divide-emerald-200/60">
+            @forelse($topRajinTu as $r)
+              <li class="py-2 flex items-center justify-between">
+                <span class="truncate">{{ $r->user_name ?? ($r->user->name ?? '-') }}</span>
+                <span class="px-2 py-0.5 text-[11px] rounded-full bg-white text-emerald-700 ring-1 ring-emerald-300 tabular-nums">
+                  Hadir {{ (int)($r->jml_hadir ?? $r->jml ?? 0) }}
+                </span>
+              </li>
+            @empty
+              <li class="py-4 text-sm text-emerald-800/70">Belum ada data.</li>
+            @endforelse
+          </ul>
+        </div>
+
+        <div class="rounded-xl ring-1 ring-amber-200 bg-amber-50/40 p-4">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-amber-800">Paling Sering Telat</h4>
+            <span class="text-[11px] text-amber-700">Top 5</span>
+          </div>
+          <ul class="divide-y divide-amber-200/60">
+            @forelse($topTelatTu as $t)
+              <li class="py-2 grid grid-cols-3 items-center gap-2">
+                <span class="truncate col-span-2">{{ $t->user_name ?? ($t->user->name ?? '-') }}</span>
+                <div class="justify-self-end flex items-center gap-2">
+                  <span class="px-2 py-0.5 text-[11px] rounded-full bg-white text-amber-700 ring-1 ring-amber-300 tabular-nums">
+                    {{ (int)($t->jml_telat ?? $t->jml ?? 0) }}x
+                  </span>
+                  <span class="px-2 py-0.5 text-[11px] rounded-full bg-white text-slate-700 ring-1 ring-slate-200 tabular-nums">
+                    {{ (int)($t->total_menit ?? $t->menit ?? 0) }} mnt
+                  </span>
+                </div>
+              </li>
+            @empty
+              <li class="py-4 text-sm text-amber-800/70">Belum ada data.</li>
+            @endforelse
+          </ul>
+        </div>
+      </aside>
+    </div>
+
+    <p class="mt-3 text-xs text-slate-500">
+      “Belum” dihitung sejak akun dibuat hingga periode ini (hari kerja yang sudah berjalan),
+      lalu dikurangi Hadir/Telat/Izin/Sakit pada bulan <b>{{ $chartPeriod ?? now()->translatedFormat('F Y') }}</b>.
+    </p>
+  </section>
+
+  {{-- ===== Bawah: Aktivitas Terakhir & TU Terbaru ===== --}}
+  <div class="grid lg:grid-cols-2 gap-4 mt-6">
+    <section class="rounded-2xl bg-white ring-1 ring-slate-200 p-5">
+      <h3 class="font-semibold text-slate-900 mb-3">Aktivitas Terakhir</h3>
+      <ul class="space-y-2">
+        @forelse(($pendingIzin ?? collect())->take(6) as $p)
+          <li class="flex items-center gap-3 text-sm">
+            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span class="truncate">
+              <b>{{ $p->user?->name ?? '-' }}</b> mengajukan {{ $p->jenis }}
+              ({{ \Carbon\Carbon::parse($p->tgl_mulai)->format('d M') }}–{{ \Carbon\Carbon::parse($p->tgl_selesai)->format('d M Y') }})
+            </span>
           </li>
         @empty
-          <li class="py-4 text-sm text-slate-500 text-center">Belum ada data.</li>
+          <li class="text-sm text-slate-500">Tidak ada aktivitas menonjol.</li>
         @endforelse
       </ul>
     </section>
@@ -278,21 +333,6 @@
     </section>
   </div>
 
-  {{-- ===== Aktivitas Terakhir (BARU, ringan) ===== --}}
-  <section class="rounded-2xl bg-white ring-1 ring-slate-200 p-5 mt-6">
-    <h3 class="font-semibold text-slate-900 mb-3">Aktivitas Terakhir</h3>
-    <ul class="space-y-2">
-      @forelse(($pendingIzin ?? collect())->take(3) as $p)
-        <li class="flex items-center gap-3 text-sm">
-          <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-          <span class="truncate"><b>{{ $p->user?->name ?? '-' }}</b> mengajukan {{ $p->jenis }} ({{ \Carbon\Carbon::parse($p->tgl_mulai)->format('d M') }}–{{ \Carbon\Carbon::parse($p->tgl_selesai)->format('d M Y') }})</span>
-        </li>
-      @empty
-        <li class="text-sm text-slate-500">Tidak ada aktivitas menonjol.</li>
-      @endforelse
-    </ul>
-  </section>
-
   {{-- ===== UX helpers ===== --}}
   <button id="backToTop"
     class="fixed bottom-6 right-6 hidden px-3 py-2 rounded-full bg-slate-900 text-white text-xs shadow hover:bg-slate-800">
@@ -315,5 +355,78 @@
       else btnTop?.classList.add('hidden');
     });
     btnTop?.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  </script>
+
+  {{-- ===== Scripts: Chart.js (rekap bulanan) ===== --}}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script>
+  (function(){
+    const labels = @json($chartLabels ?? []);
+    const dHadir = @json($chartHadir  ?? []);
+    const dTelat = @json($chartTelat  ?? []);
+    const dIzin  = @json($chartIzin   ?? []);
+    const dSakit = @json($chartSakit  ?? []);
+    const dBelum = @json($chartBelum  ?? []);
+
+    const ctx = document.getElementById('tuRekapChart')?.getContext('2d');
+    if(!ctx) return;
+
+    const C = {
+      hadir: 'rgba(5, 150, 105, 0.9)',   // emerald
+      telat: 'rgba(245, 158, 11, 0.9)',  // amber
+      izin:  'rgba(14, 165, 233, 0.9)',  // sky
+      sakit: 'rgba(244, 63, 94, 0.85)',  // rose
+      belum: 'rgba(99, 102, 241, 0.78)', // indigo
+    };
+
+    const few = labels.length <= 2;
+    const barThickness = few ? 42 : (labels.length <= 8 ? 32 : 24);
+
+    const STACK_A = 'tercatat', STACK_B = 'belum';
+
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label:'Hadir', data:dHadir, backgroundColor:C.hadir, stack:STACK_A, borderRadius:6, barThickness },
+          { label:'Telat', data:dTelat, backgroundColor:C.telat, stack:STACK_A, borderRadius:6, barThickness },
+          { label:'Izin',  data:dIzin,  backgroundColor:C.izin,  stack:STACK_A, borderRadius:6, barThickness },
+          { label:'Sakit', data:dSakit, backgroundColor:C.sakit, stack:STACK_A, borderRadius:6, barThickness },
+          { label:'Belum', data:dBelum, backgroundColor:C.belum, stack:STACK_B, borderRadius:6, barThickness },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 12, boxHeight: 12 } },
+          tooltip: { mode: 'index', intersect: false },
+          title: {
+            display: true,
+            text: 'Rekap Presensi Bulanan — {{ $chartPeriod ?? now()->translatedFormat('F Y') }}',
+            padding: { top: 4, bottom: 8 },
+            font: { size: 14, weight: '600' }
+          }
+        },
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: {
+            stacked: true,
+            grid: { display: false },
+            ticks: { autoSkip: false, maxRotation: 0, minRotation: 0, font: { size: 12 } },
+            categoryPercentage: 0.62,
+            barPercentage: 1.0
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            ticks: { precision: 0 }
+          }
+        },
+        datasets: { bar: { maxBarThickness: barThickness } }
+      }
+    });
+  })();
   </script>
 @endsection

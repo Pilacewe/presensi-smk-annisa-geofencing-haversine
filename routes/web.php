@@ -21,15 +21,23 @@ use App\Http\Controllers\Piket\PiketRiwayatController;
 
 // Admin
 use App\Http\Controllers\Admin\AdminDashboardController;
-use App\Http\Controllers\Admin\AdminUserController;
+use App\Http\Controllers\Admin\AdminUserController; // optional
 use App\Http\Controllers\Admin\PresensiController as AdminPresensiController;
 use App\Http\Controllers\Admin\AdminIzinController;
-use App\Http\Controllers\Admin\AdminExportController;
 use App\Http\Controllers\Admin\AdminGuruController;
 use App\Http\Controllers\Admin\AdminTuController;
 use App\Http\Controllers\Admin\AdminPiketController;
-// ✅ IMPORT YANG KURANG (AKUN ADMIN)
+use App\Http\Controllers\Admin\KepsekController as AdminKepsekController;
+// ⬇️ TAMBAHKAN INI
+use App\Http\Controllers\Admin\ReportController as AdminReportController;
+
+// Akun Admin
 use App\Http\Controllers\Admin\Account\AdminAccountController;
+
+// Kepsek (role kepsek)
+use App\Http\Controllers\Kepsek\DashboardController as KepsekDashboardController;
+use App\Http\Controllers\Kepsek\AccountController   as KepsekAccountController;
+use App\Http\Controllers\Kepsek\RekapController     as KepsekRekapController;
 
 /*
 |--------------------------------------------------------------------------
@@ -37,9 +45,8 @@ use App\Http\Controllers\Admin\Account\AdminAccountController;
 |--------------------------------------------------------------------------
 */
 Route::get('/', function () {
-    if (!Auth::check()) {
-        return redirect()->route('login');
-    }
+    if (!Auth::check()) return redirect()->route('login');
+
     return match (Auth::user()->role) {
         'admin' => redirect()->route('admin.dashboard'),
         'tu'    => redirect()->route('tu.dashboard'),
@@ -71,12 +78,12 @@ Route::prefix('admin')->name('admin.')->middleware(['auth','role:admin'])->group
     // Dashboard
     Route::get('/dashboard', [AdminDashboardController::class,'index'])->name('dashboard');
 
-    // Presensi
+    // Presensi (Admin kelola)
     Route::get   ('/presensi',                [AdminPresensiController::class,'index'])->name('presensi.index');
     Route::get   ('/presensi/{presensi}/edit',[AdminPresensiController::class,'edit'])->name('presensi.edit');
     Route::patch ('/presensi/{presensi}',     [AdminPresensiController::class,'update'])->name('presensi.update');
 
-    // Izin (admin)
+    // Izin (Admin)
     Route::get   ('/izin',                [AdminIzinController::class, 'index'])->name('izin.index');
     Route::patch ('/izin/{izin}/approve', [AdminIzinController::class, 'approve'])->name('izin.approve');
     Route::patch ('/izin/{izin}/reject',  [AdminIzinController::class, 'reject'])->name('izin.reject');
@@ -111,9 +118,16 @@ Route::prefix('admin')->name('admin.')->middleware(['auth','role:admin'])->group
         Route::get  ('/export', [AdminTuController::class, 'export'])->name('export');
     });
 
-    // ✅ AKUN ADMIN
+    // Kepsek (Admin kelola akun Kepsek)
+    // Kepsek (Admin kelola akun Kepsek)
+    Route::resource('kepsek', \App\Http\Controllers\Admin\KepsekController::class)->except(['show']);
+    Route::post('kepsek/{user}/reset-password', [\App\Http\Controllers\Admin\KepsekController::class, 'resetPassword'])
+        ->name('kepsek.reset');
+
+
+    // Akun Admin
     Route::post('/account/sessions/end-others', [AdminAccountController::class, 'endOtherSessions'])
-    ->name('account.sessions.endOthers');
+        ->name('account.sessions.endOthers');
     Route::prefix('account')->name('account.')->group(function () {
         Route::get   ('/',           [AdminAccountController::class, 'index'])->name('index');
         Route::patch ('/profile',    [AdminAccountController::class, 'updateProfile'])->name('profile.update');
@@ -121,10 +135,9 @@ Route::prefix('admin')->name('admin.')->middleware(['auth','role:admin'])->group
         Route::delete('/avatar',     [AdminAccountController::class, 'deleteAvatar'])->name('avatar.delete');
         Route::patch ('/password',   [AdminAccountController::class, 'updatePassword'])->name('password.update');
         Route::patch ('/settings',   [AdminAccountController::class, 'updateSettings'])->name('settings.update');
-        
     });
 
-    // Piket
+    // Piket (Admin kelola akun Piket & roster)
     Route::get   ('/piket',                  [AdminPiketController::class,'index'])->name('piket.index');
     Route::get   ('/piket/create',           [AdminPiketController::class,'create'])->name('piket.create');
     Route::post  ('/piket',                  [AdminPiketController::class,'store'])->name('piket.store');
@@ -135,8 +148,14 @@ Route::prefix('admin')->name('admin.')->middleware(['auth','role:admin'])->group
     Route::post  ('/piket/roster',           [AdminPiketController::class,'rosterStore'])->name('piket.roster.store');
     Route::delete('/piket/roster/{roster}',  [AdminPiketController::class,'rosterDestroy'])->name('piket.roster.destroy');
 
-    // Export
-    Route::get('/export', [AdminExportController::class,'index'])->name('export.index');
+    // Export lama (tetap ada tapi diarahkan ke halaman laporan baru)
+    Route::get('/export', [AdminReportController::class, 'index'])->name('export.index');
+
+    // Laporan / Export (baru)
+    Route::get('/laporan',         [AdminReportController::class, 'index'])->name('reports.index');
+    Route::get('/laporan/preview', [AdminReportController::class, 'preview'])->name('reports.preview');
+    Route::get('/laporan/export',  [AdminReportController::class, 'export'])->name('reports.export');
+
 });
 
 /*
@@ -153,11 +172,11 @@ Route::middleware(['auth','role:guru,piket,tu'])->group(function () {
     Route::get('/presensi/riwayat', [PresensiController::class, 'riwayat'])->name('presensi.riwayat');
 
     // Izin (pegawai)
-    Route::get   ('/izin',           [IzinController::class,'index'])->name('izin.index');
-    Route::get   ('/izin/create',    [IzinController::class,'create'])->name('izin.create');
-    Route::post  ('/izin',           [IzinController::class,'store'])->name('izin.store');
-    Route::get   ('/izin/{izin}',    [IzinController::class,'show'])->name('izin.show');
-    Route::delete('/izin/{izin}',    [IzinController::class,'destroy'])->name('izin.destroy');
+    Route::get   ('/izin',        [IzinController::class,'index'])->name('izin.index');
+    Route::get   ('/izin/create', [IzinController::class,'create'])->name('izin.create');
+    Route::post  ('/izin',        [IzinController::class,'store'])->name('izin.store');
+    Route::get   ('/izin/{izin}', [IzinController::class,'show'])->name('izin.show');
+    Route::delete('/izin/{izin}', [IzinController::class,'destroy'])->name('izin.destroy');
 });
 
 /*
@@ -174,11 +193,11 @@ Route::prefix('tu')->name('tu.')->middleware(['auth','role:tu'])->group(function
     Route::get('/export/pdf',    [TuExportController::class,'exportPdf'])->name('export.pdf');
 
     // TU Self-Presensi
-    Route::get ('/absensi',         [TuSelfPresensiController::class,'index'])->name('absensi.index');
-    Route::get ('/absensi/masuk',   [TuSelfPresensiController::class,'formMasuk'])->name('absensi.formMasuk');
-    Route::post('/absensi/masuk',   [TuSelfPresensiController::class,'storeMasuk'])->name('absensi.storeMasuk');
-    Route::get ('/absensi/keluar',  [TuSelfPresensiController::class,'formKeluar'])->name('absensi.formKeluar');
-    Route::post('/absensi/keluar',  [TuSelfPresensiController::class,'storeKeluar'])->name('absensi.storeKeluar');
+    Route::get ('/absensi',        [TuSelfPresensiController::class,'index'])->name('absensi.index');
+    Route::get ('/absensi/masuk',  [TuSelfPresensiController::class,'formMasuk'])->name('absensi.formMasuk');
+    Route::post('/absensi/masuk',  [TuSelfPresensiController::class,'storeMasuk'])->name('absensi.storeMasuk');
+    Route::get ('/absensi/keluar', [TuSelfPresensiController::class,'formKeluar'])->name('absensi.formKeluar');
+    Route::post('/absensi/keluar', [TuSelfPresensiController::class,'storeKeluar'])->name('absensi.storeKeluar');
 
     // Izin TU pribadi
     Route::get ('/absensi/izin',         [TuSelfPresensiController::class,'izinIndex'])->name('absensi.izinIndex');
@@ -189,31 +208,37 @@ Route::prefix('tu')->name('tu.')->middleware(['auth','role:tu'])->group(function
 
 /*
 |--------------------------------------------------------------------------
-| KEPSEK (placeholder)
+| KEPSEK (role kepsek)
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth','role:kepsek'])->group(function () {
-    Route::get('/kepsek/dashboard', function () {
-        return view('kepsek.dashboard');
-    })->name('kepsek.dashboard');
+Route::prefix('kepsek')->name('kepsek.')->middleware(['auth','role:kepsek'])->group(function () {
+    // Dashboard
+    Route::get('/dashboard', [KepsekDashboardController::class, 'index'])->name('dashboard');
+
+    // Account
+    Route::get('/account',  [KepsekAccountController::class, 'index'])->name('account');
+    Route::put('/account',  [KepsekAccountController::class, 'update'])->name('account.update');
+
+    // Rekap
+    Route::get('/rekap-harian',  [KepsekRekapController::class, 'harian'])->name('rekap.harian');
+    Route::get('/rekap-bulanan', [KepsekRekapController::class, 'bulanan'])->name('rekap.bulanan');
 });
 
 /*
 |--------------------------------------------------------------------------
-| PIKET
+| PIKET (role piket)
 |--------------------------------------------------------------------------
 */
 Route::prefix('piket')->name('piket.')->middleware(['auth','role:piket'])->group(function () {
     Route::get('/dashboard', [PiketDashboardController::class,'index'])->name('dashboard');
-    Route::post('/dashboard/start', [\App\Http\Controllers\Piket\PiketDashboardController::class,'startShift'])
-        ->name('dashboard.start');
+    Route::post('/dashboard/start', [PiketDashboardController::class,'startShift'])->name('dashboard.start');
 
     Route::get('/cek',    [PiketCekController::class,'index'])->name('cek');
     Route::get('/rekap',  [PiketRekapController::class,'index'])->name('rekap');
     Route::get('/riwayat',[PiketRiwayatController::class,'index'])->name('riwayat');
 
-    Route::get ('/absen-manual',  [PiketCekController::class, 'create'])->name('absen.create');
-    Route::post('/absen-manual',  [PiketCekController::class, 'store'])->name('absen.store');
+    Route::get ('/absen-manual', [PiketCekController::class, 'create'])->name('absen.create');
+    Route::post('/absen-manual', [PiketCekController::class, 'store'])->name('absen.store');
 });
 
 /*
